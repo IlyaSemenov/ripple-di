@@ -1,0 +1,120 @@
+name: Test and Release
+
+env:
+  # Keep in sync with .changeset/config.json:baseBranch
+  MAIN_REF: refs/heads/main
+  # For jdx/mise-action@v3, see https://github.com/jdx/mise-action/issues/394
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  push:
+    branches: ["**"]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+# Publish to npm with OIDC
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  # Every runtime the README claims support for runs the built package.
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+        with:
+          version: 2026.7.15
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Build package
+        run: bun run build
+
+      - name: Smoke test on Bun
+        run: bun tests/smoke.mjs
+
+      - name: Setup oldest supported Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 18
+
+      - name: Smoke test on Node 18
+        run: node tests/smoke.mjs
+
+      - name: Setup current Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Smoke test on Node 24
+        run: node tests/smoke.mjs
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Smoke test on Deno
+        run: deno run tests/smoke.mjs
+
+  test-and-release:
+    name: Test and Release
+    runs-on: ubuntu-latest
+    needs: smoke
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+        with:
+          version: 2026.7.15
+
+      # for npx publish
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Build package
+        run: bun run build
+
+      - name: Typecheck package
+        run: bun run types
+
+      - name: Test package
+        run: bun run test
+
+      - name: Capture new release versions
+        if: ${{ github.ref == env.MAIN_REF }}
+        run: |
+          if npx @changesets/cli status --output=release.json; then
+            echo "RELEASE=Version $(jq -r '.releases[0].newVersion' release.json)" >> "$GITHUB_ENV"
+            rm release.json
+          fi
+
+      - name: Create Release Pull Request or Publish to npm
+        if: ${{ github.ref == env.MAIN_REF }}
+        uses: changesets/action@v1
+        with:
+          publish: npx changeset publish
+          title: ${{ env.RELEASE }}
+          commit: ${{ env.RELEASE }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Bootstrap only. Remove after configuring Trusted Publishing.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

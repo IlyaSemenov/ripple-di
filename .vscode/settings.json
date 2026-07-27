@@ -1,0 +1,8 @@
+{
+  "search.exclude": {
+    "node_modules": true,
+    "dist": true
+  },
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.formatOnSave": true
+}
