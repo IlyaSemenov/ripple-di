@@ -1,0 +1,68 @@
+name: Test and Release
+
+env:
+  # Keep in sync with .changeset/config.json:baseBranch
+  MAIN_REF: refs/heads/main
+  # For jdx/mise-action@v3, see https://github.com/jdx/mise-action/issues/394
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  push:
+    branches: ["**"]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+# Publish to npm with OIDC
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  test-and-release:
+    name: Test and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+        with:
+          version: 2026.7.15
+
+      # for npx publish
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Build package
+        run: bun run build
+
+      - name: Test package
+        run: bun run test
+
+      - name: Capture new release versions
+        if: ${{ github.ref == env.MAIN_REF }}
+        run: |
+          if npx @changesets/cli status --output=release.json; then
+            echo "RELEASE=Version $(jq -r '.releases[0].newVersion' release.json)" >> "$GITHUB_ENV"
+            rm release.json
+          fi
+
+      - name: Create Release Pull Request or Publish to npm
+        if: ${{ github.ref == env.MAIN_REF }}
+        uses: changesets/action@v1
+        with:
+          publish: npx changeset publish
+          title: ${{ env.RELEASE }}
+          commit: ${{ env.RELEASE }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # After first publish, configure npm trusted publishing and delete the next line.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

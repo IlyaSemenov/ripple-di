@@ -1,0 +1,50 @@
+{
+  "name": "ripple-di",
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Ripple DI brings contextual dependency injection to TypeScript with scoped overrides, automatic dependency tracking, and lifecycle-aware resources.",
+  "keywords": [
+    "dependency-injection",
+    "typescript",
+    "scoped",
+    "inversion-of-control"
+  ],
+  "author": "Ilya Semenov",
+  "license": "MIT",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "bun@1.3.14",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IlyaSemenov/ripple-di.git"
+  },
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.mts",
+  "files": [
+    "README.md",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepare": "lefthook install",
+    "test": "bun test",
+    "types": "tsc && tsc -p tests/tsconfig.json",
+    "prepublishOnly": "bun run build",
+    "lint": "biome check --write ."
+  },
+  "devDependencies": {
+    "@arethetypeswrong/core": "^0.18.5",
+    "@biomejs/biome": "^2.5.5",
+    "@changesets/cli": "^2.31.1",
+    "@tsconfig/bun": "^1.0.10",
+    "@types/bun": "^1.3.14",
+    "publint": "^0.3.22",
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2"
+  }
+}
