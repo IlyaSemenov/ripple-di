@@ -1,7 +1,7 @@
 {
   "name": "ripple-di",
   "type": "module",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Ripple DI brings contextual dependency injection to TypeScript with scoped overrides, automatic dependency tracking, and lifecycle-aware resources.",
   "keywords": [
     "dependency-injection",
