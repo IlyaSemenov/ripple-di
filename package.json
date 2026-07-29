@@ -1,7 +1,7 @@
 {
   "name": "ripple-di",
   "type": "module",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Scoped dependency injection for TypeScript with automatic dependency tracking and lifecycle-aware cleanup.",
   "keywords": [
     "dependency-injection",
