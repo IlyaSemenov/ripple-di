@@ -1,6 +1,6 @@
 # Ripple DI
 
-Scoped dependency injection for TypeScript without container lookups in application code.
+Scoped dependency injection for TypeScript with automatic dependency tracking, lifecycle-aware cleanup, and no container lookups in application code.
 
 ## Example
 
@@ -37,7 +37,13 @@ const users = await withOverrides(
 `useDb` reads `useConfig()`, so Ripple DI builds a separate database for the test configuration and loads the users through it.
 The production database and everything unrelated keep the instances they already had, and the temporary database is closed when the callback finishes.
 
-This is the ripple: override one input, and only the values built from it change.
+This is the ripple: override one input, and only the values derived from it are rebuilt.
+
+## Design trade-off
+
+Ripple DI is an ambient service locator by design: code imports a dependency and calls it instead of receiving it as an argument.
+
+This makes dependencies convenient to use and override, but also makes them less explicit: looking at a function's signature does not tell you which Ripple DI dependencies it reads.
 
 ## Install
 
@@ -48,58 +54,21 @@ npm install ripple-di
 Ripple DI needs `node:async_hooks`, so it runs on Node.js 18 or newer, Bun, and Deno with Node compatibility, but not in browsers.
 The package is published as ESM.
 
-## Quick start
-
-Define each shared input and service once, next to the code that owns it.
-Factories are lazy: they run the first time something reads the value.
-
-```ts
-// config.ts
-import { defineDependency } from "ripple-di"
-
-export const useConfig = defineDependency(() => ({
-  databaseUrl: process.env.DATABASE_URL,
-}))
-```
-
-```ts
-// db.ts
-import { defineDependency } from "ripple-di"
-
-import { useConfig } from "./config"
-
-export const useDb = defineDependency(
-  () => createDb(useConfig().databaseUrl),
-  { dispose: db => db.close() },
-)
-```
-
-Anything that needs the database imports it and calls it.
-
-```ts
-import { useDb } from "./db"
-
-export async function loadUsers() {
-  return useDb().query("select * from users")
-}
-```
-
-The return type of `useDb()` is inferred from `createDb`.
-
 ## Which function do I call?
 
-| You want to                                               | Call
-| --------------------------------------------------------- | ---------------------------
-| Define an input, derived value, or service                | `defineDependency`
-| Supply the real values when the application starts        | `install`
-| Replace values for one callback                           | `withOverrides`
-| Name an override of one dependency you write often        | `createValueOverride`
-| Replace the same values for many separate calls           | `createOverrideRunner`
-| Replace values for a lifetime you manage yourself         | `createScope`
-| Supply a value, or a factory, to `install` or an override | `provide`, `provideFactory`
-| Shut everything down                                      | `dispose`
+| You want to                                   | Call
+| --------------------------------------------- | --------------------------------------------------
+| Define an input, derived value, or service    | `defineDependency`
+| Supply the application's values at startup    | `install` with `provide` or `provideFactory`
+| Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
+| Keep one scope open across several operations | `createScope`
+| Shut everything down                          | `dispose`
+
+`createValueOverride` and `createOverrideRunner` in [Advanced usage](#advanced-usage) turn a set of overrides you write often into a reusable helper.
 
 ## Define dependencies
+
+Define each shared input and service once, in the module that owns it, and import it wherever it is used.
 
 Call `defineDependency<T>()` without a factory when a value must come from the application, request, or task boundary.
 
@@ -117,15 +86,44 @@ await withOverrides(
 Reading it without a provider throws `MissingProviderError`.
 Pass a factory when the dependency has a built-in value.
 The factory runs lazily, and calls to other dependencies inside it are tracked.
-A function is always taken as that factory, so a dependency whose own value is a function needs `defineDependency(() => handler)`.
+A function in the first argument is always the factory, so a dependency whose value is itself a function wraps it: `defineDependency(() => handler)`.
 
 ```ts
 const useClock = defineDependency(() => systemClock)
 const usePublicUrl = defineDependency(() => createPublicUrl(useConfig()))
 ```
 
-The result is cached and recreated wherever one of the dependencies it read is overridden.
-Add a `dispose` callback when values owned by Ripple DI need cleanup, as shown by `useDb` in the quick start.
+The result is cached, and a scope that overrides one of the dependencies it read gets a separate result.
+Its type comes from the factory, so `useDb()` returns whatever `createDb` returns.
+Add a `dispose` callback when values owned by Ripple DI need cleanup, as shown by `useDb` in the example above.
+
+A factory can read dependencies, but cannot create, enter, close, or retire scopes and installations in its own runtime; misuse throws `FactoryScopeOperationError`.
+
+### Promises and thenables
+
+A factory returns the value itself, synchronously; disposers may be asynchronous.
+
+```ts
+import { asValue, defineDependency } from "ripple-di"
+
+// The usual case: the factory returns the value.
+defineDependency(() => createSessionStore())
+
+// Reading this throws AsyncFactoryError: reads made after an await are not tracked.
+defineDependency(async () => loadSession())
+
+// The promise itself is the cached dependency value.
+defineDependency(() => asValue(loadSession()))
+
+// A query builder implements `then` but is an ordinary value.
+defineDependency(() => selectSessions())
+```
+
+A factory is rejected only when it returns a native `Promise` object, so a value that merely implements `then` is stored as it is.
+Wrap the result in `asValue` when the promise itself is the value the dependency holds.
+
+`asValue` marks the promise as the value and does nothing else.
+The dependencies its asynchronous work reads after an `await` are still untracked, so a promise cached for the whole application can end up built from the temporary values of whichever scope started it.
 
 ## Override dependencies
 
@@ -177,24 +175,49 @@ const [leftUsers, rightUsers] = await Promise.all([
 ])
 ```
 
-### Name an override you write repeatedly
+### Awaitable callback results
 
-When the same dependency is supplied the same way all over the application, `createValueOverride` turns that into one named helper.
+`withOverrides`, and every helper built on it, awaits what its callback returns before closing the temporary scope, so returning a query builder from one of them runs the query.
+Use such a value inside the callback, and use `createScope` when it has to outlive the callback.
+Wrapping the value in an object prevents it from being awaited, but the temporary scope still closes before the caller receives it.
+Anything that scope owned has already been cleaned up.
+
+## What belongs to a scope
+
+A factory-created value belongs to the innermost scope that supplied either its factory or one of the dependencies it read.
+When its factory and everything it read belong to the application, the value belongs to the application too, and closing a child scope leaves it alone.
+
+**Reading a dependency inside a scope does not make its value scope-local.**
 
 ```ts
-import { createValueOverride } from "ripple-di"
-
-const withOpenAiClient = createValueOverride(useOpenAiClient)
-
-await withOpenAiClient(client, () => createTextEmbedding(text))
+// Wrong: every request shares this one transaction.
+const useTransaction = defineDependency(
+  () => useDb().transaction(),
+  { dispose: tx => tx.rollback() },
+)
 ```
 
-Each call supplies the value it is given to one callback, exactly like writing `withOverrides` with a single `provide` by hand.
-Pass the ownership options once, and every call cleans its own value up.
+`useDb` belongs to the application, so a transaction built from it belongs to the application too.
+Every request reads the same transaction, and it is rolled back at shutdown rather than when the request ends.
+
+For a value that belongs to one operation, define the dependency without a built-in factory.
+Provide its factory when you create the scope of that operation:
 
 ```ts
-const withConnection = createValueOverride(useConnection, { dispose: true })
+const useTransaction = defineDependency<Transaction>({
+  dispose: tx => tx.rollback(),
+})
+
+await withOverrides(
+  [provideFactory(useTransaction, () => useDb().transaction())],
+  () => processRequest(),
+)
 ```
+
+Each call now builds its own transaction, still lazily, and the scope rolls it back when the callback finishes.
+Reading `useTransaction()` outside such a scope throws `MissingProviderError` instead of quietly sharing one.
+
+A value also becomes scope-local through what it reads: a factory that reads a dependency the scope provides — a request context, a tenant, a fixed clock — is rebuilt in that scope and cleaned up with it.
 
 ## Wire the application at startup
 
@@ -234,9 +257,10 @@ Closing the installation removes its providers and cleans up the scopes and owne
 - Installing while another installation or any scope is still open throws `InstallationConflictError`, whose message says what is still open.
   Await `installation.close()` before installing a replacement.
 - Providing the same dependency twice in one installation is rejected, exactly like in `withOverrides`.
-- Installing late is allowed: it applies to the reads that come after it, and closing it brings the earlier values back.
+- Install once during startup.
+  Late installation is supported for a controlled bootstrap or a test setup: it applies to the reads that come after it, and closing it brings the earlier values back.
 - Every worker thread and every process wires its own installation.
-- In tests, install once for the whole process and use `withOverrides` per test.
+- In tests, install once for the whole process and override per test, as shown in [Test your application](#test-your-application).
 
 ### Collect the providers of several modules
 
@@ -294,6 +318,66 @@ Values created inside `withOverrides` never wait for shutdown; they are cleaned 
 `dispose()` is final: afterwards the runtime cannot resolve dependencies, create scopes, or install providers, and those calls throw `ScopeClosedError`.
 Do not use it to reset state between tests — use `withOverrides` for that, or create a separate runtime for each lifecycle.
 
+## Test your application
+
+Install the wiring the suite needs once for the whole test process, from the preload or setup file the test runner already has, and give each test the values of its own.
+
+```ts
+import {
+  createOverrideRunner,
+  createScope,
+  provide,
+  type Scope,
+  withOverrides,
+} from "ripple-di"
+
+test("loads users from the test database", () =>
+  withOverrides(
+    provide(useConfig, testConfig),
+    () => loadUsers(),
+  ),
+)
+```
+
+The scope lives exactly as long as that callback, so tests running in parallel cannot see one another's overrides.
+
+When several tests share one set of values that is expensive to build, create the scope once and run each test inside it.
+
+```ts
+let scope: Scope
+
+beforeAll(() => {
+  scope = createScope([provide(useConfig, testConfig)])
+})
+
+afterAll(() => scope.close())
+
+test("lists users", () => scope.run(() => listUsers()))
+test("creates a user", () => scope.run(() => createUser()))
+```
+
+Entering a scope in a hook does not carry it into the tests that follow.
+
+```ts
+// Wrong: the scope is current inside this callback and nowhere else.
+beforeAll(() => scope.run(() => {}))
+```
+
+- `scope.run` and `withOverrides` make a scope current for their own callback only, so every test that needs the scope runs inside one of them.
+- Tests that share a suite scope also share the values cached in it, so keep that recipe for values they can safely reuse.
+- `scope.run` does not report child scopes a test leaves open, so a test that creates one closes it itself instead of leaving it until `afterAll`.
+
+When every test in a file needs the same overrides in a separate scope, a runner applies them to each test independently.
+
+```ts
+const testConfigOverrides = createOverrideRunner(() => [
+  provide(useConfig, testConfig),
+])
+
+test("lists users", testConfigOverrides.wrap(() => listUsers()))
+test("creates a user", testConfigOverrides.wrap(() => createUser()))
+```
+
 ## Advanced usage
 
 Everything below is optional.
@@ -320,6 +404,7 @@ provide(useDb, fakeDb, { dispose: db => db.closeImmediately() })
 
 A function passed to `provide` stays an ordinary function value; use `provideFactory` when it should build the value instead.
 The dependencies an override factory reads are tracked like the ones read by the factory it replaces.
+An override factory cannot read the previous value of the dependency it replaces; define a base dependency and a decorated one instead.
 `dispose: true` reuses the disposer from `defineDependency`, so it throws right away when the dependency declares none.
 
 A provision that hands over ownership belongs to a single scope or installation.
@@ -361,13 +446,35 @@ try {
 }
 ```
 
-- `scope.run` makes the scope current for a callback without closing it.
+- `scope.run` makes the scope current for a callback without closing it, and returns the callback's result unchanged.
 - `scope.resolve(useDb)` reads a dependency from that scope rather than the current one.
+  A factory reads from its own scope only, so calling `scope.resolve` on a different scope inside one throws `CrossScopeResolutionError`.
 - `scope.createScope` and `scope.withOverrides` create children of that scope instead of the current one.
 - A child of the scope that `withOverrides` created must be closed before the callback returns, otherwise Ripple DI closes it and throws `LeakedChildScopeError`.
 - `scope.close()` closes the scope and everything below it, while `scope.retire()` waits for child scopes to finish first.
 - Closing disposes what the scope itself created; reused application values stay open.
 - Cleanup continues past a failing disposer and reports every failure in one `AggregateError`.
+- A disposer, and any async work it starts, cannot read dependencies or manage scopes and installations in the runtime being closed; misuse throws `DisposerContextError`.
+  Put everything cleanup needs into the dependency value itself.
+
+### Name an override you write repeatedly
+
+When the same dependency is supplied the same way all over the application, `createValueOverride` turns that into one named helper.
+
+```ts
+import { createValueOverride } from "ripple-di"
+
+const withOpenAiClient = createValueOverride(useOpenAiClient)
+
+await withOpenAiClient(client, () => createTextEmbedding(text))
+```
+
+Each call supplies the value it is given to one callback, exactly like writing `withOverrides` with a single `provide` by hand.
+Pass the ownership options once, and every call cleans its own value up.
+
+```ts
+const withConnection = createValueOverride(useConnection, { dispose: true })
+```
 
 ### Reuse one set of overrides
 
@@ -449,6 +556,7 @@ await Promise.all([
 ```
 
 A dependency belongs to the runtime that defined it and cannot be read or overridden in another one.
+The module-level `defineDependency` always defines a dependency of the built-in runtime, so an application factory like the one above defines every dependency it needs through its own runtime.
 Pass `name` to `createRuntime` to see that name in error messages.
 Every runtime has the same methods, and each has a module-level counterpart that targets the built-in runtime:
 
@@ -479,28 +587,21 @@ const useConfig = defineDependency(loadConfig, { name: "config" })
 
 The name only affects messages.
 
-## Limits
+## Do not mix package copies
 
-- Factories are synchronous; disposers may be asynchronous.
-  A factory returns the value itself, so a value that implements `then`, such as a query builder or another awaitable client, is stored as it is.
-  A factory is rejected only when it returns a native `Promise` object, because dependency reads made after an `await` are not tracked.
-  When the promise is the value, wrap the result in `asValue`: `defineDependency(() => asValue(loadToken()))` defines a `Promise<Token>` dependency created once and awaited by its readers.
-- A `withOverrides` callback that returns an awaitable value has it awaited, exactly like any promise returned from a callback, so returning a query builder runs its query.
-  Use the value inside the callback, and use `createScope` when it has to outlive the callback.
-  Returning it wrapped in an object avoids the await but hands back a value whose scope is already closed, together with everything that scope owned.
-- A factory can read dependencies, but cannot create, enter, close, or retire scopes and installations in its own runtime; misuse throws `FactoryScopeOperationError`.
-- A disposer, and any async work it starts, cannot read dependencies or manage scopes and installations in the runtime being closed; misuse throws `DisposerContextError`.
-  Put everything cleanup needs into the dependency value itself.
-- A factory reads from its own scope only; `scope.resolve` on a different scope throws `CrossScopeResolutionError`.
+Two copies of Ripple DI, separately installed or bundled, each run their own graph and cannot be combined.
+Do not pass dependencies or provisions between them, and do not call one copy's dependency inside a factory owned by the other.
+Such a call is not detected: the dependency may resolve against its own copy instead of failing at the boundary.
+
+Declare `ripple-di` as a peer dependency in any package that exports dependencies of its own.
+
+## Caveats
+
 - Only the dependency calls made while a factory runs are tracked.
-  Reads from `process.env`, `Date.now()`, or another async context are not.
-- An override factory cannot read the previous value of the dependency it replaces; define a base dependency and a decorated one instead.
-- A factory-created value is scoped only by the dependencies its factory reads.
-  A value whose factory reads none stays shared even when it is first requested inside a scope.
+  Everything else stays invisible: `process.env`, `Date.now()`, and any dependency called after the factory has returned.
 - Read dependencies where you use them.
   A module-level `const db = useDb()` freezes one scope's value forever.
-- Two copies of Ripple DI, separately installed or bundled, each run their own graph and cannot be combined.
-  Do not pass dependencies or provisions between them, and do not call one copy's dependency inside a factory owned by the other.
+- When a factory catches an error from reading a dependency, its value is not shared: every scope that asks for it builds a new one.
 
 ## License
 
