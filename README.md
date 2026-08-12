@@ -29,7 +29,7 @@ Now replace only the configuration for one operation:
 import { provide, withOverrides } from "ripple-di"
 
 const users = await withOverrides(
-  [provide(useConfig, { databaseUrl: testDatabaseUrl })],
+  provide(useConfig, { databaseUrl: testDatabaseUrl }),
   () => loadUsers(),
 )
 ```
@@ -64,7 +64,7 @@ The package is published as ESM.
 | Keep one scope open across several operations | `createScope`
 | Shut everything down                          | `dispose`
 
-`createValueOverride` and `createOverrideRunner` in [Advanced usage](#advanced-usage) turn a set of overrides you write often into a reusable helper.
+`createValueOverride` and `createOverrideRunner` in [Advanced usage](#advanced-usage) turn overrides you write repeatedly into reusable helpers.
 
 ## Define dependencies
 
@@ -78,7 +78,7 @@ import { defineDependency, provide, withOverrides } from "ripple-di"
 const useTenant = defineDependency<Tenant>()
 
 await withOverrides(
-  [provide(useTenant, tenant)],
+  provide(useTenant, tenant),
   () => processRequest(),
 )
 ```
@@ -128,16 +128,15 @@ The dependencies its asynchronous work reads after an `await` are still untracke
 ## Override dependencies
 
 `withOverrides` runs a callback with temporary values and cleans up whatever it created for that callback.
+Pass one `provide` or `provideFactory` directly.
 
 ```ts
 import { provide, withOverrides } from "ripple-di"
 
 const users = await withOverrides(
-  [
-    provide(useConfig, {
-      databaseUrl: "postgres://localhost/test",
-    }),
-  ],
+  provide(useConfig, {
+    databaseUrl: "postgres://localhost/test",
+  }),
   () => loadUsers(),
 )
 ```
@@ -157,21 +156,12 @@ await withOverrides(
 )
 ```
 
-For one dependency, you can omit the array:
-
-```ts
-await withOverrides(
-  provide(useConfig, testConfig),
-  () => loadUsers(),
-)
-```
-
 Overrides survive `await` and stay isolated between parallel callbacks.
 
 ```ts
 const [leftUsers, rightUsers] = await Promise.all([
-  withOverrides([provide(useConfig, leftConfig)], () => loadUsers()),
-  withOverrides([provide(useConfig, rightConfig)], () => loadUsers()),
+  withOverrides(provide(useConfig, leftConfig), () => loadUsers()),
+  withOverrides(provide(useConfig, rightConfig), () => loadUsers()),
 ])
 ```
 
@@ -209,7 +199,7 @@ const useTransaction = defineDependency<Transaction>({
 })
 
 await withOverrides(
-  [provideFactory(useTransaction, () => useDb().transaction())],
+  provideFactory(useTransaction, () => useDb().transaction()),
   () => processRequest(),
 )
 ```
@@ -347,7 +337,7 @@ When several tests share one set of values that is expensive to build, create th
 let scope: Scope
 
 beforeAll(() => {
-  scope = createScope([provide(useConfig, testConfig)])
+  scope = createScope(provide(useConfig, testConfig))
 })
 
 afterAll(() => scope.close())
@@ -370,9 +360,9 @@ beforeAll(() => scope.run(() => {}))
 When every test in a file needs the same overrides in a separate scope, a runner applies them to each test independently.
 
 ```ts
-const testConfigOverrides = createOverrideRunner(() => [
+const testConfigOverrides = createOverrideRunner(() =>
   provide(useConfig, testConfig),
-])
+)
 
 test("lists users", testConfigOverrides.wrap(() => listUsers()))
 test("creates a user", testConfigOverrides.wrap(() => createUser()))
@@ -417,9 +407,9 @@ const useQueue = defineDependency<Queue>({
   dispose: queue => queue.close(),
 })
 
-const installation = install([
+const installation = install(
   provideFactory(useQueue, () => createQueue(queueUrl)),
-])
+)
 
 // Later, at shutdown:
 await installation.close()
@@ -435,9 +425,7 @@ Use `createScope` when several operations share the same overrides and close at 
 ```ts
 import { createScope, provide } from "ripple-di"
 
-const scope = createScope([
-  provide(useConfig, tenantConfig),
-])
+const scope = createScope(provide(useConfig, tenantConfig))
 
 try {
   await scope.run(() => processTenant())
@@ -459,7 +447,8 @@ try {
 
 ### Name an override you write repeatedly
 
-When the same dependency is supplied the same way all over the application, `createValueOverride` turns that into one named helper.
+When a dependency is replaced in only one place, keep `withOverrides` with one `provide` at the call site.
+For repeated replacements, `createValueOverride` turns the pattern into a named helper.
 
 ```ts
 import { createValueOverride } from "ripple-di"
@@ -484,9 +473,9 @@ A long-lived object such as an API caller or a job worker is created once, but e
 ```ts
 import { createOverrideRunner, provide } from "ripple-di"
 
-const jobOverrides = createOverrideRunner(() => [
+const jobOverrides = createOverrideRunner(() =>
   provide(useJobContext, createJobContext(), { dispose: true }),
-])
+)
 
 const worker = createWorker(job => jobOverrides.run(() => handleJob(job)))
 ```
@@ -510,9 +499,9 @@ That also suits a file of independent test cases that share one set of overrides
 `extend` returns a runner with one more layer of overrides and leaves the runner it extends unchanged:
 
 ```ts
-const tenantOverrides = jobOverrides.extend(() => [
+const tenantOverrides = jobOverrides.extend(() =>
   provide(useTenantResolver, tenantResolver),
-])
+)
 
 await tenantOverrides.run(() => handleRequest())
 ```
