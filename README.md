@@ -172,8 +172,9 @@ Use such a value inside the callback, and use `createScope` when it has to outli
 Wrapping the value in an object prevents it from being awaited, but the temporary scope still closes before the caller receives it.
 Anything that scope owned has already been cleaned up.
 
-## What belongs to a scope
+## Where a value belongs
 
+The same tracked dependency calls that decide when a factory result must be rebuilt also decide which lifecycle owns it and invokes its disposer.
 A factory-created value belongs to the innermost scope that supplied either its factory or one of the dependencies it read.
 When its factory and everything it read belong to the application, the value belongs to the application too, and closing a child scope leaves it alone.
 
@@ -209,6 +210,27 @@ Reading `useTransaction()` outside such a scope throws `MissingProviderError` in
 
 A value also becomes scope-local through what it reads: a factory that reads a dependency the scope provides — a request context, a tenant, a fixed clock — is rebuilt in that scope and cleaned up with it.
 
+An installation follows the same rule: a value belongs to it when the installation supplied its factory or one of the dependencies the factory read.
+
+```ts
+const useBuiltInConfig = defineDependency(() => rootConfig)
+const useRootPool = defineDependency(() => createPool(useBuiltInConfig()), {
+  dispose: pool => pool.end(),
+})
+
+const useInstalledConfig = defineDependency<DatabaseConfig>()
+const useInstalledPool = defineDependency(() => createPool(useInstalledConfig()), {
+  dispose: pool => pool.end(),
+})
+
+const installation = install(provide(useInstalledConfig, installedConfig))
+useRootPool()
+useInstalledPool()
+await installation.close() // Before installing replacement providers.
+```
+
+The installed pool closes with the installation, while the root pool remains cached until `dispose()` because its factory read only built-in dependencies.
+
 ## Wire the application at startup
 
 Some dependencies get their real value only when the application starts.
@@ -224,11 +246,11 @@ export const useTenantResolver = defineDependency<TenantResolver>()
 
 ```ts
 // startup.ts
-import { install, provide } from "ripple-di"
+import { dispose, install, provide } from "ripple-di"
 
 import { useTenantResolver, useWebConfig } from "./dependencies"
 
-const installation = install([
+install([
   provide(useWebConfig, config),
   provide(useTenantResolver, resolveTenant),
 ])
@@ -236,19 +258,23 @@ const installation = install([
 try {
   await runApplication()
 } finally {
-  await installation.close()
+  await dispose()
 }
 ```
 
 Installed providers are the fallback everywhere: request handlers, background jobs, tests, and any other code running outside a scope.
 Nothing is resolved eagerly, and a scoped override still wins over an installed provider.
-Closing the installation removes its providers and cleans up the scopes and owned values created beneath it.
+Closing an installation removes its providers and cleans up values whose factory or tracked dependencies belong to it.
+It keeps the runtime usable, so application-owned values remain cached for later installations.
+Use `installation.close()` before a controlled replacement; use `dispose()` to shut the application down.
 
 - Installing while another installation or any scope is still open throws `InstallationConflictError`, whose message says what is still open.
   Await `installation.close()` before installing a replacement.
 - Providing the same dependency twice in one installation is rejected, exactly like in `withOverrides`.
 - Install once during startup.
   Late installation is supported for a controlled bootstrap or a test setup: it applies to the reads that come after it, and closing it brings the earlier values back.
+- If a resource needs the lifetime of each installation, define its dependency without a built-in factory and export a module provision builder that returns `provideFactory`.
+  This keeps the factory body in its owning module, but removes the built-in fallback: reading the dependency without that provision throws `MissingProviderError`.
 - Every worker thread and every process wires its own installation.
 - In tests, install once for the whole process and override per test, as shown in [Test your application](#test-your-application).
 
@@ -278,17 +304,19 @@ export function getPlatformProvisions() {
 
 ```ts
 // startup.ts
-const installation = install([
+import { dispose, install } from "ripple-di"
+
+install([
   ...getCoreProvisions(),
   ...getPlatformProvisions(),
 ])
 
-onShutdown(() => installation.close())
+onShutdown(() => dispose())
 ```
 
 - Export a function that builds the provisions rather than a ready-made array, so each installation gets provisions of its own.
   A provision that hands over ownership belongs to a single installation and cannot be reused by the next one.
-- The composition root that installs the provisions is also the one that closes the installation, from whichever shutdown hook the application already has.
+- The composition root that installs the provisions also calls `dispose()` from the shutdown hook the application already has.
 - Tests have the same single composition root: one preload installs the provisions of every layer the suite needs.
   Separate preloads installing on their own would fail on the second `install` instead of adding their providers.
 
@@ -296,6 +324,7 @@ onShutdown(() => installation.close())
 
 Call `dispose()` when the application shuts down.
 It closes every scope and cleans up every owned value still held by the module-level API, including an active installation.
+Closing only the installation can leave [application-owned values](#where-a-value-belongs) cached.
 
 ```ts
 import { dispose } from "ripple-di"
@@ -407,15 +436,13 @@ const useQueue = defineDependency<Queue>({
   dispose: queue => queue.close(),
 })
 
-const installation = install(
-  provideFactory(useQueue, () => createQueue(queueUrl)),
-)
+install(provideFactory(useQueue, () => createQueue(queueUrl)))
 
-// Later, at shutdown:
-await installation.close()
+// Later, at application shutdown:
+await dispose()
 ```
 
-The installed factory is lazy, and its queue client is closed with the installation.
+The installed factory is lazy, and its queue client is closed either with the installation during a controlled replacement or with the runtime at application shutdown.
 
 ### Manage a scope explicitly
 
