@@ -595,13 +595,15 @@ Errors thrown by your own factory arrive wrapped in `FactoryError` with the orig
 A failed factory is not cached, so the next read tries again.
 
 These errors name the dependencies involved.
-Pass `name` to give one a readable label instead of a generated one:
+An explicit `name` is always used when you provide one:
 
 ```ts
 const useConfig = defineDependency(loadConfig, { name: "config" })
 ```
 
 The name only affects messages.
+Without an explicit name, Ripple DI uses a non-empty factory name or shows a generated name with the `defineDependency` call location, such as `dependency#21 (packages/core/src/openai/config.ts:36)`.
+The location follows the runtime's stack and source maps, is captured once when the dependency is defined, and adds no work during resolution.
 
 ## Do not mix package copies
 

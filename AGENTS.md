@@ -67,7 +67,7 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - Callable dispatch order is factory frame, the owning runtime's `AsyncLocalStorage`, then its active installation or root scope.
 - `Runtime` convenience methods use the same current scope selection.
 - Keep every `Runtime` method available as a module-level function that delegates to the built-in global runtime.
-- Generate anonymous diagnostic names as `dependency#N`; do not infer names from `factory.name`.
+- Select dependency diagnostic names in this order: explicit `options.name`, non-empty `factory.name`, then `dependency#N` with the definition site captured at `defineDependency`.
 - Filled scope view caches are never invalidated.
 - Only a cell owner registers and runs its disposer.
 - Register directly supplied owned values during scope creation so they are disposed even when unread.

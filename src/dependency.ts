@@ -36,6 +36,7 @@ const dependencyNodes = new WeakMap<object, DependencyNode<unknown>>()
 /** Complete private recipe used to create one callable dependency definition. */
 interface DependencyDefinition<T> {
   readonly name: string | undefined
+  readonly definitionSite: string | undefined
   readonly runtime: RuntimeContext
   readonly defaultFactory: (() => FactoryResult<T>) | undefined
   readonly dispose: DependencyNode<T>["dispose"]
@@ -51,12 +52,71 @@ class DependencyNodeImpl<T> implements DependencyNode<T> {
   readonly dependency: Dependency<T>
 
   constructor(definition: DependencyDefinition<T>) {
-    this.name = definition.name ?? `dependency#${this.id}`
+    const generatedName = `dependency#${this.id}`
+    this.name =
+      definition.name ??
+      (definition.definitionSite
+        ? `${generatedName} (${definition.definitionSite})`
+        : generatedName)
     this.runtime = definition.runtime
     this.defaultFactory = definition.defaultFactory
     this.dispose = definition.dispose
     this.dependency = (() => this.runtime.readCallable(this)) as Dependency<T>
   }
+}
+
+/** Captures and reduces a definition stack before it enters private metadata. */
+export function captureDefinitionSite(caller: Function): string | undefined {
+  const error = new Error()
+  const captureStackTrace =
+    typeof Error.captureStackTrace === "function"
+      ? Error.captureStackTrace
+      : undefined
+  if (captureStackTrace) {
+    captureStackTrace(error, caller)
+  }
+
+  const frames = error.stack?.split("\n").slice(1) ?? []
+  const skippedFrames = captureStackTrace ? frames : frames.slice(2)
+  for (const frame of skippedFrames) {
+    const site = definitionSiteFromFrame(frame)
+    if (site) {
+      return site
+    }
+  }
+  return undefined
+}
+
+function definitionSiteFromFrame(frame: string): string | undefined {
+  let location = frame.trim().replace(/^at\s+/, "")
+  const openingParenthesis = location.lastIndexOf("(")
+  if (openingParenthesis >= 0 && location.endsWith(")")) {
+    location = location.slice(openingParenthesis + 1, -1)
+  } else {
+    const atSign = location.lastIndexOf("@")
+    if (atSign >= 0) {
+      location = location.slice(atSign + 1)
+    }
+    location = location.replace(/^async\s+/, "")
+  }
+
+  const match = /^(.*):(\d+):\d+$/.exec(location)
+  if (!match || !match[1]) {
+    return undefined
+  }
+
+  let file = match[1].replace(/^file:\/\//, "").replaceAll("\\", "/")
+  try {
+    file = decodeURI(file)
+  } catch {
+    // Keep the runtime's original path when it contains invalid URI escapes.
+  }
+
+  const workingDirectory = `${process.cwd().replaceAll("\\", "/")}/`
+  if (file.startsWith(workingDirectory)) {
+    file = file.slice(workingDirectory.length)
+  }
+  return `${file}:${match[2]}`
 }
 
 /** Creates a property-free callable whose metadata lives only in a `WeakMap`. */

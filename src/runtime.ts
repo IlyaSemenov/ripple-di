@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 
 import {
+  captureDefinitionSite,
   createDependency,
   type Dependency,
   type DependencyOptions,
@@ -145,13 +146,29 @@ class RuntimeImpl implements RuntimeContext {
     factoryOrOptions?: (() => FactoryResult<T>) | DependencyOptions<T>,
     maybeOptions?: DependencyOptions<T>,
   ): Dependency<T> {
+    return this.defineDependencyAt(
+      factoryOrOptions,
+      maybeOptions,
+      captureDefinitionSite(this.defineDependency),
+    )
+  }
+
+  defineDependencyAt<T>(
+    factoryOrOptions:
+      | (() => FactoryResult<T>)
+      | DependencyOptions<T>
+      | undefined,
+    maybeOptions: DependencyOptions<T> | undefined,
+    definitionSite: string | undefined,
+  ): Dependency<T> {
     const isFactory = typeof factoryOrOptions === "function"
     const factory = isFactory ? factoryOrOptions : undefined
     const options: DependencyOptions<T> =
       (isFactory ? maybeOptions : factoryOrOptions) ?? {}
 
     return createDependency({
-      name: options.name,
+      name: options.name ?? (factory?.name || undefined),
+      definitionSite,
       runtime: this,
       defaultFactory: factory,
       dispose: options.dispose,
@@ -383,10 +400,11 @@ export function defineDependency<T>(
   factoryOrOptions?: (() => FactoryResult<T>) | DependencyOptions<T>,
   maybeOptions?: DependencyOptions<T>,
 ): Dependency<T> {
-  if (typeof factoryOrOptions === "function") {
-    return globalRuntime.defineDependency(factoryOrOptions, maybeOptions)
-  }
-  return globalRuntime.defineDependency(factoryOrOptions)
+  return globalRuntime.defineDependencyAt(
+    factoryOrOptions,
+    maybeOptions,
+    captureDefinitionSite(defineDependency),
+  )
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   CrossScopeResolutionError,
   createRuntime,
   DependencyCycleError,
+  defineDependency,
   FactoryError,
   FactoryScopeOperationError,
   MissingProviderError,
@@ -19,6 +20,8 @@ import { createQueryBuilder, type QueryBuilder } from "./awaitable"
 
 // Distinctive successful value for the branch that avoids the test cycle.
 const NON_CYCLIC_VALUE = 42
+const ANONYMOUS_DIAGNOSTIC_NAME =
+  /^dependency#\d+ \(tests\/resolution\.test\.ts:\d+\)$/
 
 describe("resolution and tracking", () => {
   it("reports a missing provider", async () => {
@@ -54,9 +57,126 @@ describe("resolution and tracking", () => {
     const runtime = createRuntime()
     const useAnonymous = runtime.defineDependency<string>()
 
-    expect(() => runtime.resolve(useAnonymous)).toThrow(
-      /^Dependency "dependency#\d+" has no provider\.$/,
+    let error: unknown
+    try {
+      runtime.resolve(useAnonymous)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(MissingProviderError)
+    expect((error as MissingProviderError).dependencyName).toMatch(
+      ANONYMOUS_DIAGNOSTIC_NAME,
     )
+    expect((error as MissingProviderError).path).toEqual([
+      (error as MissingProviderError).dependencyName,
+    ])
+    await runtime.dispose()
+  })
+
+  it("uses a named factory unless an explicit name takes priority", async () => {
+    const runtime = createRuntime()
+    function namedFactory(): never {
+      throw new Error("named failure")
+    }
+    const useNamedFactory = runtime.defineDependency(namedFactory)
+    const useExplicitName = runtime.defineDependency(namedFactory, {
+      name: "explicit",
+    })
+
+    expect(() => runtime.resolve(useNamedFactory)).toThrow(
+      'Factory for dependency "namedFactory" failed',
+    )
+    expect(() => runtime.resolve(useExplicitName)).toThrow(
+      'Factory for dependency "explicit" failed',
+    )
+    await runtime.dispose()
+  })
+
+  it("keeps anonymous definition sites through a resolution chain", async () => {
+    const runtime = createRuntime()
+    const useMissing = runtime.defineDependency<string>()
+    const useMiddle = runtime.defineDependency(() => useMissing())
+    const useOuter = runtime.defineDependency(() => useMiddle())
+
+    let error: unknown
+    try {
+      runtime.resolve(useOuter)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(MissingProviderError)
+    const missingError = error as MissingProviderError
+    expect(missingError.dependencyName).toMatch(ANONYMOUS_DIAGNOSTIC_NAME)
+    expect(missingError.path).toHaveLength(3)
+    for (const dependencyName of missingError.path) {
+      expect(dependencyName).toMatch(ANONYMOUS_DIAGNOSTIC_NAME)
+    }
+    await runtime.dispose()
+  })
+
+  it("keeps anonymous definition sites in dependency cycles", async () => {
+    const runtime = createRuntime()
+    let useEntry!: Dependency<number>
+    let useReturn!: Dependency<number>
+    useEntry = runtime.defineDependency(() => useReturn())
+    useReturn = runtime.defineDependency(() => useEntry())
+
+    let error: unknown
+    try {
+      runtime.resolve(useEntry)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(DependencyCycleError)
+    const path = (error as DependencyCycleError).path
+    expect(path).toHaveLength(3)
+    expect(path[0]).toBe(path[2])
+    expect(path[0]).toMatch(ANONYMOUS_DIAGNOSTIC_NAME)
+    expect(path[1]).toMatch(ANONYMOUS_DIAGNOSTIC_NAME)
+    await runtime.dispose()
+  })
+
+  it("reports a global default factory at its definition site", () => {
+    const cause = new Error("global failure")
+    const useFailure = defineDependency(() => {
+      throw cause
+    })
+
+    let error: unknown
+    try {
+      useFailure()
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(FactoryError)
+    const factoryError = error as FactoryError
+    expect(factoryError.dependencyName).toMatch(ANONYMOUS_DIAGNOSTIC_NAME)
+    expect(factoryError.path).toEqual([factoryError.dependencyName])
+    expect(factoryError.cause).toBe(cause)
+  })
+
+  it("reports an override factory with the dependency definition site", async () => {
+    const runtime = createRuntime()
+    const cause = new Error("override failure")
+    const useOverride = runtime.defineDependency<string>()
+    const scope = runtime.createScope(
+      provideFactory(useOverride, () => {
+        throw cause
+      }),
+    )
+
+    let error: unknown
+    try {
+      scope.resolve(useOverride)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(FactoryError)
+    const factoryError = error as FactoryError
+    expect(factoryError.dependencyName).toMatch(ANONYMOUS_DIAGNOSTIC_NAME)
+    expect(factoryError.path).toEqual([factoryError.dependencyName])
+    expect(factoryError.cause).toBe(cause)
+    await scope.close()
     await runtime.dispose()
   })
 
