@@ -196,8 +196,14 @@ The detached scope inherits from the active installation, or from the runtime ro
 It remains part of that lifecycle: closing the installation or calling `dispose()` force-closes it.
 When no installation is active, an unfinished detached scope also prevents `install()` until its callback and cleanup finish.
 
-The returned promise settles after the callback and cleanup finish.
-Keep or observe it so callback and cleanup failures are handled.
+The detached scope remains current while the callback runs and while Ripple DI awaits its result.
+The promise returned by `withDetachedOverrides` settles after the scope closes, so keep override-dependent finalization inside the callback:
+
+```ts
+withDetachedOverrides(provisions, () =>
+  runBackgroundTask().finally(finalizeBackgroundTask),
+)
+```
 
 ## Where a value belongs
 
