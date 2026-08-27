@@ -65,7 +65,7 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - Do not add process-wide state, `globalThis` writes, `Symbol.for` registry keys, or cross-copy protocols.
   Callable reads across separately loaded copies are outside supported graph composition and intentionally remain undetected.
 - Callable dispatch order is factory frame, the owning runtime's `AsyncLocalStorage`, then its active installation or root scope.
-- `Runtime` convenience methods use the same current scope selection, except `withDetachedOverrides`, which creates a temporary child of the runtime's active installation or root and remains part of that base scope's lifecycle.
+- `Runtime` convenience methods use the same current scope selection, except detached APIs, which create temporary children of the runtime's active installation or root and remain part of that base scope's lifecycle.
 - Keep every `Runtime` method available as a module-level function that delegates to the built-in global runtime.
 - Select dependency diagnostic names in this order: explicit `options.name`, non-empty `factory.name`, then `dependency#N` with the definition site captured at `defineDependency`.
 - Filled scope view caches are never invalidated.
@@ -100,6 +100,9 @@ Factory-created values are reused whenever their provider and recorded dependenc
   Installed providers use the same immutable bindings, dependency tracking, ownership, and disposal rules as scoped overrides.
   `Runtime.dispose()` force-closes its complete scope tree.
   `retire()` waits for live descendants, while `close()` force-closes the subtree.
+- A detached context reproduces every immutable binding layer between the current ambient scope and the runtime base without copying caches.
+  Reuse borrowed values, reinstall factory recipes with new ownership, and reject the complete operation before creating scopes when any reproduced layer contains an owned-value provision.
+  Require the current ambient scope to be active, but allow retiring ancestors that still serve an active descendant.
 - Name the type parameter of a callback-based API `TCallbackResult` and infer it from the callback's own return type, whether or not the API awaits it.
   Declare an awaited result as `Promise<Awaited<TCallbackResult>>` instead of declaring the callback as returning `TCallbackResult | Promise<TCallbackResult>`, and do not export an alias for that form.
 - Do not add live mutation, signal effects, async resolution, previous-binding decorators, or cross-scope factory reads to the core API.

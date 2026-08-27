@@ -7,6 +7,7 @@ import {
   InstallationConflictError,
   MissingProviderError,
   provide,
+  provideFactory,
   ScopeClosedError,
 } from "ripple-di"
 
@@ -208,6 +209,79 @@ describe("installation", () => {
     releaseTail()
     await detachedTail
     await runtime.dispose()
+  })
+
+  it("force-closes detached contexts with their installation", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useResource = runtime.defineDependency<object>({
+      name: "resource",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    const installation = runtime.install([])
+    let releaseBackgroundWork!: () => void
+    const backgroundGate = new Promise<void>((resolve) => {
+      releaseBackgroundWork = resolve
+    })
+    let backgroundTask!: Promise<void>
+
+    await runtime.withOverrides(
+      provideFactory(useResource, () => ({})),
+      () => {
+        backgroundTask = runtime.withDetachedContext(async () => {
+          useResource()
+          await backgroundGate
+        })
+      },
+    )
+
+    await installation.close()
+    expect(disposed).toBe(1)
+    releaseBackgroundWork()
+    await backgroundTask
+    await runtime.dispose()
+  })
+
+  it("uses the root lifecycle when detaching without an installation", async () => {
+    const runtime = createRuntime({ name: "app" })
+    let disposed = 0
+    const useResource = runtime.defineDependency<object>({
+      name: "resource",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    let releaseBackgroundWork!: () => void
+    const backgroundGate = new Promise<void>((resolve) => {
+      releaseBackgroundWork = resolve
+    })
+    let backgroundTask!: Promise<void>
+
+    await runtime.withOverrides(
+      provideFactory(useResource, () => ({})),
+      () => {
+        backgroundTask = runtime.withDetachedContext(async () => {
+          useResource()
+          await backgroundGate
+        })
+      },
+    )
+
+    let conflict: unknown
+    try {
+      runtime.install([])
+    } catch (caught) {
+      conflict = caught
+    }
+    expect(conflict).toBeInstanceOf(InstallationConflictError)
+    expect((conflict as InstallationConflictError).reason).toBe("live-scopes")
+
+    await runtime.dispose()
+    expect(disposed).toBe(1)
+    releaseBackgroundWork()
+    await backgroundTask
   })
 
   it("closes an active installation during runtime disposal", async () => {

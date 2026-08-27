@@ -61,7 +61,8 @@ The package is published as ESM.
 | Define an input, derived value, or service    | `defineDependency`
 | Supply the application's values at startup    | `install` with `provide` or `provideFactory`
 | Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
-| Run after the current scope can close         | `withDetachedOverrides`
+| Continue every current override layer         | `withDetachedContext`
+| Run detached with selected overrides          | `withDetachedOverrides`
 | Keep one scope open across several operations | `createScope`
 | Shut everything down                          | `dispose`
 
@@ -173,11 +174,27 @@ Use such a value inside the callback, and use `createScope` when it has to outli
 Wrapping the value in an object prevents it from being awaited, but the temporary scope still closes before the caller receives it.
 Anything that scope owned has already been cleaned up.
 
-### Run outside the current scope
+### Continue after the current scope closes
 
-`withDetachedOverrides` runs work in a temporary scope that does not inherit the current ambient scope.
-Use it when work must continue after a request or another scoped operation can finish.
-Capture every request value the work needs and provide it explicitly.
+`withDetachedContext` and `withDetachedOverrides` run work outside the current ambient scope, so a request or another scoped operation can close while that work continues.
+
+Use `withDetachedContext` to continue with every override layer that is active when you call it:
+
+```ts
+import { withDetachedContext } from "ripple-di"
+
+const backgroundTask = withDetachedContext(() =>
+  updateTenantSearchIndex(),
+)
+
+trackBackgroundTask(backgroundTask)
+```
+
+It reproduces those layers in new scopes without copying cached dependency values.
+Borrowed values keep their identity, while factory provisions run again and their results belong to the new scopes.
+If a layer owns an existing provided value, the call rejects with `DetachedContextOwnedProvisionError` because the value cannot belong to both contexts.
+
+Use `withDetachedOverrides` when the work should receive only selected values, especially across a security-sensitive boundary:
 
 ```ts
 import { provide, withDetachedOverrides } from "ripple-di"
@@ -192,15 +209,14 @@ const backgroundTask = withDetachedOverrides(
 trackBackgroundTask(backgroundTask)
 ```
 
-The detached scope inherits from the active installation, or from the runtime root when no installation is active.
-It remains part of that lifecycle: closing the installation or calling `dispose()` force-closes it.
-When no installation is active, an unfinished detached scope also prevents `install()` until its callback and cleanup finish.
+Both functions create scopes beneath the active installation, or beneath the runtime root when no installation is active.
+Closing the installation or calling `dispose()` force-closes them, and an unfinished root child prevents `install()`.
 
-The detached scope remains current while the callback runs and while Ripple DI awaits its result.
-The promise returned by `withDetachedOverrides` settles after the scope closes, so keep override-dependent finalization inside the callback:
+The scope remains current while the callback runs and while Ripple DI awaits its result.
+The returned promise settles after cleanup, so code that needs the detached context, including finalization, belongs inside the callback:
 
 ```ts
-withDetachedOverrides(provisions, () =>
+withDetachedContext(() =>
   runBackgroundTask().finally(finalizeBackgroundTask),
 )
 ```
@@ -614,6 +630,7 @@ Every runtime has the same methods, and each has a module-level counterpart that
 - `resolve`
 - `createScope`
 - `withOverrides`
+- `withDetachedContext`
 - `withDetachedOverrides`
 - `createValueOverride`
 - `createOverrideRunner`

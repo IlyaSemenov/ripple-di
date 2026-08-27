@@ -19,6 +19,7 @@ import {
   resolve,
   type Scope,
   type ValueOverride,
+  withDetachedContext,
   withDetachedOverrides,
   withOverrides,
 } from "ripple-di"
@@ -112,6 +113,16 @@ describe("module-level API", () => {
 
   it("exposes detached overrides through the module-level API", async () => {
     const result: Promise<number> = withDetachedOverrides([], async (scope) => {
+      expectTypeOf(scope).toEqualTypeOf<Scope>()
+      await Promise.resolve()
+      return 42
+    })
+
+    expect(await result).toBe(42)
+  })
+
+  it("exposes detached context through the module-level API", async () => {
+    const result: Promise<number> = withDetachedContext(async (scope) => {
       expectTypeOf(scope).toEqualTypeOf<Scope>()
       await Promise.resolve()
       return 42
@@ -339,6 +350,8 @@ describe("type inference", () => {
 
     const globalCall = withOverrides([], countOrLoad)
     const runtimeCall = runtime.withOverrides([], countOrLoad)
+    const globalDetachedCall = withDetachedContext(countOrLoad)
+    const runtimeDetachedCall = runtime.withDetachedContext(countOrLoad)
     const scopeCall = scope.withOverrides([], countOrLoad)
     const runCall = runner.run(countOrLoad)
     const wrapped = runner.wrap(countOrLoad)
@@ -347,6 +360,8 @@ describe("type inference", () => {
 
     expectTypeOf(globalCall).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(runtimeCall).toEqualTypeOf<Promise<number | string>>()
+    expectTypeOf(globalDetachedCall).toEqualTypeOf<Promise<number | string>>()
+    expectTypeOf(runtimeDetachedCall).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(scopeCall).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(runCall).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(wrapped).toEqualTypeOf<() => Promise<number | string>>()
@@ -354,6 +369,8 @@ describe("type inference", () => {
 
     expect(await globalCall).toBe(1)
     expect(await runtimeCall).toBe(1)
+    expect(await globalDetachedCall).toBe(1)
+    expect(await runtimeDetachedCall).toBe(1)
     expect(await scopeCall).toBe(1)
     expect(await runCall).toBe(1)
     expect(await wrapped()).toBe(1)

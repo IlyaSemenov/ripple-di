@@ -87,6 +87,22 @@ export class OwnedProvisionReuseError extends RippleError {
   }
 }
 
+/** A detached context cannot reproduce a provision that owns its value. */
+export class DetachedContextOwnedProvisionError extends RippleError {
+  constructor(
+    readonly dependencyName: string,
+    readonly scopeName: string,
+  ) {
+    super(
+      `Cannot detach context from scope "${scopeName}" because its ` +
+        `provision for dependency "${dependencyName}" owns an existing ` +
+        "value. Use a borrowed value or factory provision when the context " +
+        "must be reproducible.",
+    )
+    this.name = "DetachedContextOwnedProvisionError"
+  }
+}
+
 /** Dependency factories called one another in a cycle. */
 export class DependencyCycleError extends RippleError {
   constructor(readonly path: readonly string[]) {

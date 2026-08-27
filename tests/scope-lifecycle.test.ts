@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test"
 import type { Scope } from "ripple-di"
 import {
   createRuntime,
+  DetachedContextOwnedProvisionError,
   DisposerContextError,
   DuplicateProviderError,
   FactoryError,
@@ -193,6 +194,220 @@ describe("ambient scope and concurrency", () => {
     await scope.close()
     release()
     await expect(detached).rejects.toBeInstanceOf(ScopeClosedError)
+    await runtime.dispose()
+  })
+})
+
+describe("detached context", () => {
+  it("rejects capture from the current retiring scope", async () => {
+    const runtime = createRuntime()
+    const useValue = runtime.defineDependency<string>({ name: "value" })
+    const parent = runtime.createScope([provide(useValue, "parent")])
+    const child = parent.createScope()
+    let continueCallback!: () => void
+    const callbackGate = new Promise<void>((resolve) => {
+      continueCallback = resolve
+    })
+    let error: unknown
+
+    const callback = parent.run(async () => {
+      await callbackGate
+      error = await runtime
+        .withDetachedContext(() => useValue())
+        .then(
+          () => undefined,
+          (reason) => reason,
+        )
+    })
+    const retirement = parent.retire()
+    continueCallback()
+    await callback
+
+    expect(error).toBeInstanceOf(ScopeClosedError)
+    expect((error as ScopeClosedError).state).toBe("retiring")
+    await child.close()
+    await retirement
+    await runtime.dispose()
+  })
+
+  it("captures through a retiring ancestor from its active child", async () => {
+    const runtime = createRuntime()
+    const useParent = runtime.defineDependency<string>({ name: "parent" })
+    const useChild = runtime.defineDependency<string>({ name: "child" })
+    const parent = runtime.createScope([provide(useParent, "parent")])
+    const child = parent.createScope([provide(useChild, "child")])
+    const retirement = parent.retire()
+
+    const value = await child.run(() =>
+      runtime.withDetachedContext(() => `${useParent()}/${useChild()}`),
+    )
+
+    expect(value).toBe("parent/child")
+    await child.close()
+    await retirement
+    await runtime.dispose()
+  })
+
+  it("replays nested borrowed overrides after their source scopes close", async () => {
+    const runtime = createRuntime()
+    const useLocale = runtime.defineDependency<string>({ name: "locale" })
+    const useTraceId = runtime.defineDependency<string>({ name: "trace-id" })
+    const sharedContext = { requestId: "request-42" }
+    const useContext = runtime.defineDependency<object>({ name: "context" })
+    const installation = runtime.install([
+      provide(useLocale, "en"),
+      provide(useTraceId, "application"),
+    ])
+    let releaseBackgroundWork!: () => void
+    const backgroundGate = new Promise<void>((resolve) => {
+      releaseBackgroundWork = resolve
+    })
+    let backgroundTask!: Promise<readonly [string, string, object]>
+
+    await runtime.withOverrides(
+      [provide(useLocale, "de"), provide(useContext, sharedContext)],
+      () =>
+        runtime.withOverrides(provide(useTraceId, "request-42"), () => {
+          backgroundTask = runtime.withDetachedContext(async (scope) => {
+            await backgroundGate
+            return [
+              useLocale(),
+              useTraceId(),
+              scope.resolve(useContext),
+            ] as const
+          })
+        }),
+    )
+
+    expect(runtime.resolve(useLocale)).toBe("en")
+    expect(runtime.resolve(useTraceId)).toBe("application")
+    releaseBackgroundWork()
+    expect(await backgroundTask).toEqual(["de", "request-42", sharedContext])
+    await installation.close()
+    await runtime.dispose()
+  })
+
+  it("recreates factory values and caches in their original layer boundaries", async () => {
+    const runtime = createRuntime()
+    const disposed: string[] = []
+    let nextOuterId = 1
+    let nextInnerId = 1
+    const useOuter = runtime.defineDependency<{ id: string }>({
+      name: "outer",
+      dispose: (value) => {
+        disposed.push(value.id)
+      },
+    })
+    const useInner = runtime.defineDependency<{ id: string }>({
+      name: "inner",
+      dispose: (value) => {
+        disposed.push(value.id)
+      },
+    })
+    const useDerived = runtime.defineDependency(() => ({
+      outer: useOuter(),
+      inner: useInner(),
+    }))
+    let releaseBackgroundWork!: () => void
+    const backgroundGate = new Promise<void>((resolve) => {
+      releaseBackgroundWork = resolve
+    })
+    let sourceDerived!: ReturnType<typeof useDerived>
+    let backgroundTask!: Promise<ReturnType<typeof useDerived>>
+
+    await runtime.withOverrides(
+      provideFactory(useOuter, () => ({ id: `outer-${nextOuterId++}` })),
+      () =>
+        runtime.withOverrides(
+          provideFactory(useInner, () => ({ id: `inner-${nextInnerId++}` })),
+          () => {
+            useInner()
+            useOuter()
+            sourceDerived = useDerived()
+            backgroundTask = runtime.withDetachedContext(async () => {
+              useInner()
+              useOuter()
+              const derived = useDerived()
+              await backgroundGate
+              return derived
+            })
+          },
+        ),
+    )
+
+    expect(disposed).toEqual(["inner-1", "outer-1"])
+    releaseBackgroundWork()
+    const detachedDerived = await backgroundTask
+    expect(detachedDerived).not.toBe(sourceDerived)
+    expect(detachedDerived.outer.id).toBe("outer-2")
+    expect(detachedDerived.inner.id).toBe("inner-2")
+    expect(disposed).toEqual(["inner-1", "outer-1", "inner-2", "outer-2"])
+    await runtime.dispose()
+  })
+
+  it("rejects owned values before creating a detached scope", async () => {
+    const runtime = createRuntime()
+    const useConnection = runtime.defineDependency<object>({
+      name: "connection",
+    })
+    const connection = {}
+    let disposed = 0
+    let callbackCalled = false
+
+    await runtime.withOverrides(
+      provide(useConnection, connection, {
+        dispose: () => {
+          disposed += 1
+        },
+      }),
+      async () => {
+        const error = await runtime
+          .withDetachedContext(() => {
+            callbackCalled = true
+          })
+          .then(
+            () => undefined,
+            (reason) => reason,
+          )
+
+        expect(error).toBeInstanceOf(DetachedContextOwnedProvisionError)
+        expect(
+          (error as DetachedContextOwnedProvisionError).dependencyName,
+        ).toBe("connection")
+      },
+    )
+
+    expect(callbackCalled).toBe(false)
+    expect(disposed).toBe(1)
+    const installation = runtime.install([])
+    await installation.close()
+    await runtime.dispose()
+  })
+
+  it("keeps parallel detached contexts isolated", async () => {
+    const runtime = createRuntime()
+    let nextSessionId = 1
+    const useSession = runtime.defineDependency<{ id: number }>({
+      name: "session",
+    })
+    let backgroundTasks!: readonly [Promise<number>, Promise<number>]
+
+    await runtime.withOverrides(
+      provideFactory(useSession, () => ({ id: nextSessionId++ })),
+      () => {
+        backgroundTasks = [
+          runtime.withDetachedContext(async () => {
+            const session = useSession()
+            await delay(ASYNC_CONTEXT_DELAY_MS)
+            expect(useSession()).toBe(session)
+            return session.id
+          }),
+          runtime.withDetachedContext(() => useSession().id),
+        ]
+      },
+    )
+
+    expect(await Promise.all(backgroundTasks)).toEqual([1, 2])
     await runtime.dispose()
   })
 })
@@ -458,6 +673,10 @@ describe("owned value lifecycle", () => {
       [
         "Runtime.withDetachedOverrides",
         () => runtime.withDetachedOverrides([], () => {}),
+      ],
+      [
+        "Runtime.withDetachedContext",
+        () => runtime.withDetachedContext(() => {}),
       ],
       [
         "OverrideRunner.run",

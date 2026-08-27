@@ -29,7 +29,12 @@ import {
 } from "./overrides"
 import type { ProvideOptions, ProvisionInput } from "./provide"
 import { resolveTracked } from "./resolution"
-import { type Scope, ScopeImpl, withChildScope } from "./scope"
+import {
+  type Scope,
+  ScopeImpl,
+  withChildScope,
+  withDetachedScopeContext,
+} from "./scope"
 import type { FactoryResult } from "./value"
 
 /** Options for starting an independent dependency graph. */
@@ -109,6 +114,16 @@ export interface Runtime {
    */
   withDetachedOverrides<TCallbackResult>(
     provisions: ProvisionInput,
+    callback: (scope: Scope) => TCallbackResult,
+  ): Promise<Awaited<TCallbackResult>>
+
+  /**
+   * Continues the current dependency context outside its original scope.
+   *
+   * The runtime reproduces every current override layer beneath its active
+   * installation or root without copying cached dependency values.
+   */
+  withDetachedContext<TCallbackResult>(
     callback: (scope: Scope) => TCallbackResult,
   ): Promise<Awaited<TCallbackResult>>
 
@@ -250,6 +265,17 @@ class RuntimeImpl implements RuntimeContext {
   ): Promise<Awaited<TCallbackResult>> {
     this.assertScopeManagementAllowed("Runtime.withDetachedOverrides")
     return withChildScope(this.baseScope(), provisions, callback)
+  }
+
+  withDetachedContext<TCallbackResult>(
+    callback: (scope: Scope) => TCallbackResult,
+  ): Promise<Awaited<TCallbackResult>> {
+    this.assertScopeManagementAllowed("Runtime.withDetachedContext")
+    return withDetachedScopeContext(
+      this.baseScope(),
+      this.currentAmbientScope(),
+      callback,
+    )
   }
 
   createOverrideRunner(factory: ProvisionFactory): OverrideRunner {
@@ -477,6 +503,19 @@ export function withDetachedOverrides<TCallbackResult>(
   callback: (scope: Scope) => TCallbackResult,
 ): Promise<Awaited<TCallbackResult>> {
   return globalRuntime.withDetachedOverrides(provisions, callback)
+}
+
+/**
+ * Continues the current dependency context outside its original scope.
+ *
+ * Current override layers are reproduced beneath the active installation or
+ * runtime root without copying cached values, and are cleaned up after the
+ * callback finishes.
+ */
+export function withDetachedContext<TCallbackResult>(
+  callback: (scope: Scope) => TCallbackResult,
+): Promise<Awaited<TCallbackResult>> {
+  return globalRuntime.withDetachedContext(callback)
 }
 
 /**
