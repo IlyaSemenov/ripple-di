@@ -65,7 +65,7 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - Do not add process-wide state, `globalThis` writes, `Symbol.for` registry keys, or cross-copy protocols.
   Callable reads across separately loaded copies are outside supported graph composition and intentionally remain undetected.
 - Callable dispatch order is factory frame, the owning runtime's `AsyncLocalStorage`, then its active installation or root scope.
-- `Runtime` convenience methods use the same current scope selection.
+- `Runtime` convenience methods use the same current scope selection, except `withDetachedOverrides`, which creates a temporary child of the runtime's active installation or root and remains part of that base scope's lifecycle.
 - Keep every `Runtime` method available as a module-level function that delegates to the built-in global runtime.
 - Select dependency diagnostic names in this order: explicit `options.name`, non-empty `factory.name`, then `dependency#N` with the definition site captured at `defineDependency`.
 - Filled scope view caches are never invalidated.

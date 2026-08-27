@@ -110,6 +110,36 @@ describe("ambient scope and concurrency", () => {
     await runtime.dispose()
   })
 
+  it("runs detached overrides outside the current ambient scope", async () => {
+    const runtime = createRuntime()
+    const useTenant = runtime.defineDependency<string>({ name: "tenant" })
+    const useTail = runtime.defineDependency<string>({ name: "tail" })
+    const installation = runtime.install(provide(useTenant, "installed"))
+    let releaseTail!: () => void
+    const tailGate = new Promise<void>((resolve) => {
+      releaseTail = resolve
+    })
+    let detachedTail!: Promise<string>
+
+    await runtime.withOverrides(provide(useTenant, "request"), () => {
+      expect(useTenant()).toBe("request")
+      detachedTail = runtime.withDetachedOverrides(
+        provide(useTail, "detached"),
+        async (scope) => {
+          expect(useTenant()).toBe("installed")
+          expect(scope.resolve(useTail)).toBe("detached")
+          await tailGate
+          return `${useTenant()}/${useTail()}`
+        },
+      )
+    })
+
+    releaseTail()
+    expect(await detachedTail).toBe("installed/detached")
+    await installation.close()
+    await runtime.dispose()
+  })
+
   it("isolates parallel overrides and keeps siblings independent", async () => {
     const runtime = createRuntime()
     const useValue = runtime.defineDependency(() => "root", {
@@ -425,6 +455,10 @@ describe("owned value lifecycle", () => {
         },
       ],
       ["Runtime.withOverrides", () => runtime.withOverrides([], () => {})],
+      [
+        "Runtime.withDetachedOverrides",
+        () => runtime.withDetachedOverrides([], () => {}),
+      ],
       [
         "OverrideRunner.run",
         () => runtime.createOverrideRunner(() => []).run(() => {}),

@@ -19,6 +19,7 @@ import {
   resolve,
   type Scope,
   type ValueOverride,
+  withDetachedOverrides,
   withOverrides,
 } from "ripple-di"
 
@@ -107,6 +108,16 @@ describe("module-level API", () => {
 
     await installation.close()
     expect(() => useInstalledConfig()).toThrow(MissingProviderError)
+  })
+
+  it("exposes detached overrides through the module-level API", async () => {
+    const result: Promise<number> = withDetachedOverrides([], async (scope) => {
+      expectTypeOf(scope).toEqualTypeOf<Scope>()
+      await Promise.resolve()
+      return 42
+    })
+
+    expect(await result).toBe(42)
   })
 })
 

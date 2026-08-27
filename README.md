@@ -61,6 +61,7 @@ The package is published as ESM.
 | Define an input, derived value, or service    | `defineDependency`
 | Supply the application's values at startup    | `install` with `provide` or `provideFactory`
 | Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
+| Run after the current scope can close         | `withDetachedOverrides`
 | Keep one scope open across several operations | `createScope`
 | Shut everything down                          | `dispose`
 
@@ -171,6 +172,32 @@ const [leftUsers, rightUsers] = await Promise.all([
 Use such a value inside the callback, and use `createScope` when it has to outlive the callback.
 Wrapping the value in an object prevents it from being awaited, but the temporary scope still closes before the caller receives it.
 Anything that scope owned has already been cleaned up.
+
+### Run outside the current scope
+
+`withDetachedOverrides` runs work in a temporary scope that does not inherit the current ambient scope.
+Use it when work must continue after a request or another scoped operation can finish.
+Capture every request value the work needs and provide it explicitly.
+
+```ts
+import { provide, withDetachedOverrides } from "ripple-di"
+
+const tenant = useTenant()
+
+const backgroundTask = withDetachedOverrides(
+  provide(useTenant, tenant),
+  () => updateTenantSearchIndex(),
+)
+
+trackBackgroundTask(backgroundTask)
+```
+
+The detached scope inherits from the active installation, or from the runtime root when no installation is active.
+It remains part of that lifecycle: closing the installation or calling `dispose()` force-closes it.
+When no installation is active, an unfinished detached scope also prevents `install()` until its callback and cleanup finish.
+
+The returned promise settles after the callback and cleanup finish.
+Keep or observe it so callback and cleanup failures are handled.
 
 ## Where a value belongs
 
@@ -581,6 +608,7 @@ Every runtime has the same methods, and each has a module-level counterpart that
 - `resolve`
 - `createScope`
 - `withOverrides`
+- `withDetachedOverrides`
 - `createValueOverride`
 - `createOverrideRunner`
 - `dispose`

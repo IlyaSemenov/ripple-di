@@ -157,6 +157,59 @@ describe("installation", () => {
     await runtime.dispose()
   })
 
+  it("blocks installation while a detached root scope is alive", async () => {
+    const runtime = createRuntime({ name: "app" })
+    let releaseTail!: () => void
+    const tailGate = new Promise<void>((resolve) => {
+      releaseTail = resolve
+    })
+    const detachedTail = runtime.withDetachedOverrides([], () => tailGate)
+
+    let conflict: unknown
+    try {
+      runtime.install([])
+    } catch (caught) {
+      conflict = caught
+    }
+    expect(conflict).toBeInstanceOf(InstallationConflictError)
+    expect((conflict as InstallationConflictError).reason).toBe("live-scopes")
+
+    releaseTail()
+    await detachedTail
+    const installation = runtime.install([])
+    await installation.close()
+    await runtime.dispose()
+  })
+
+  it("force-closes detached scopes with their installation", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useOwned = runtime.defineDependency<object>({
+      name: "owned",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    const installation = runtime.install([])
+    let releaseTail!: () => void
+    const tailGate = new Promise<void>((resolve) => {
+      releaseTail = resolve
+    })
+    const detachedTail = runtime.withDetachedOverrides(
+      provide(useOwned, {}, { dispose: true }),
+      async () => {
+        useOwned()
+        await tailGate
+      },
+    )
+
+    await installation.close()
+    expect(disposed).toBe(1)
+    releaseTail()
+    await detachedTail
+    await runtime.dispose()
+  })
+
   it("closes an active installation during runtime disposal", async () => {
     const runtime = createRuntime()
     let disposeCount = 0

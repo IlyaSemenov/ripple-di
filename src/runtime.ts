@@ -66,6 +66,7 @@ export interface Runtime {
    * A configured disposer applies only to values Ripple DI owns.
    */
   defineDependency<T>(options?: DependencyOptions<T>): Dependency<T>
+
   /**
    * Defines a dependency with a lazy built-in factory.
    *
@@ -84,10 +85,13 @@ export interface Runtime {
    * must be fully closed before this method is called.
    */
   install(provisions: ProvisionInput): Installation
+
   /** Returns a dependency value from the current scope. */
   resolve<T>(dependency: Dependency<T>): T
+
   /** Creates a manually managed child of the current scope. */
   createScope(provisions?: ProvisionInput): Scope
+
   /**
    * Runs a callback with temporary overrides and cleans up everything created
    * for the callback afterward.
@@ -96,11 +100,24 @@ export interface Runtime {
     provisions: ProvisionInput,
     callback: (scope: Scope) => TCallbackResult,
   ): Promise<Awaited<TCallbackResult>>
+
+  /**
+   * Runs a callback in a temporary child of the runtime's current base scope.
+   *
+   * The callback does not inherit the current ambient scope, but its scope
+   * remains owned by the active installation or runtime root.
+   */
+  withDetachedOverrides<TCallbackResult>(
+    provisions: ProvisionInput,
+    callback: (scope: Scope) => TCallbackResult,
+  ): Promise<Awaited<TCallbackResult>>
+
   /**
    * Prepares overrides that are applied again to each call of the returned
    * runner.
    */
   createOverrideRunner(factory: ProvisionFactory): OverrideRunner
+
   /**
    * Prepares a reusable helper that replaces one dependency with a value for
    * one callback.
@@ -109,6 +126,7 @@ export interface Runtime {
     dependency: Dependency<T>,
     options?: ProvideOptions<NoInfer<T>>,
   ): ValueOverride<T>
+
   /** Closes every scope and cleans up every value owned by this runtime. */
   dispose(): Promise<void>
 }
@@ -224,6 +242,14 @@ class RuntimeImpl implements RuntimeContext {
   ): Promise<Awaited<TCallbackResult>> {
     this.assertScopeManagementAllowed("Runtime.withOverrides")
     return withChildScope(this.currentAmbientScope(), provisions, callback)
+  }
+
+  withDetachedOverrides<TCallbackResult>(
+    provisions: ProvisionInput,
+    callback: (scope: Scope) => TCallbackResult,
+  ): Promise<Awaited<TCallbackResult>> {
+    this.assertScopeManagementAllowed("Runtime.withDetachedOverrides")
+    return withChildScope(this.baseScope(), provisions, callback)
   }
 
   createOverrideRunner(factory: ProvisionFactory): OverrideRunner {
@@ -438,6 +464,19 @@ export function withOverrides<TCallbackResult>(
   callback: (scope: Scope) => TCallbackResult,
 ): Promise<Awaited<TCallbackResult>> {
   return globalRuntime.withOverrides(provisions, callback)
+}
+
+/**
+ * Runs a callback with overrides outside the current ambient scope.
+ *
+ * The temporary scope inherits from the active installation or runtime root
+ * and remains part of that lifecycle until the callback finishes.
+ */
+export function withDetachedOverrides<TCallbackResult>(
+  provisions: ProvisionInput,
+  callback: (scope: Scope) => TCallbackResult,
+): Promise<Awaited<TCallbackResult>> {
+  return globalRuntime.withDetachedOverrides(provisions, callback)
 }
 
 /**

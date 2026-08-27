@@ -591,6 +591,10 @@ describe("resolution and tracking", () => {
       ["Runtime.install", () => runtime.install([])],
       ["Runtime.createScope", () => runtime.createScope()],
       ["Runtime.withOverrides", () => runtime.withOverrides([], () => {})],
+      [
+        "Runtime.withDetachedOverrides",
+        () => runtime.withDetachedOverrides([], () => {}),
+      ],
       ["OverrideRunner.run", () => runner.run(() => {})],
       ["ValueOverride", () => overrideValue({}, () => {})],
       ["Runtime.dispose", () => runtime.dispose()],
