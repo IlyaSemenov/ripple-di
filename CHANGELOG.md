@@ -1,5 +1,11 @@
 # ripple-di
 
+## 1.2.0
+
+### Minor Changes
+
+- 4ab721d: Add `withDetachedContext` to continue all current override layers outside their original scope lifecycle.
+
 ## 1.1.0
 
 ### Minor Changes
