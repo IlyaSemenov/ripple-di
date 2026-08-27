@@ -1,5 +1,11 @@
 # ripple-di
 
+## 1.1.0
+
+### Minor Changes
+
+- 6b3dbe8: Add `withDetachedOverrides` for scoped work that does not inherit the current ambient scope.
+
 ## 1.0.1
 
 ### Patch Changes
