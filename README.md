@@ -1,6 +1,11 @@
 # Ripple DI
 
-Scoped dependency injection for TypeScript with automatic dependency tracking, lifecycle-aware cleanup, and no container lookups in application code.
+**Next-generation dependency injection for TypeScript.**
+
+Override a dependency for one request, test, or job.
+Ripple DI automatically gives everything that uses it the right scoped version, reuses everything else, and cleans up temporary resources when the work is done.
+
+No decorators, reflection metadata, string tokens, or container object in application code.
 
 ## Example
 
