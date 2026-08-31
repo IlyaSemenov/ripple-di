@@ -1,5 +1,11 @@
 # ripple-di
 
+## 2.1.0
+
+### Minor Changes
+
+- cecb255: Add `defineFactoryDependency` for defining overrideable factories that application code calls directly with runtime arguments.
+
 ## 2.0.0
 
 ### Major Changes
