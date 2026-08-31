@@ -1,5 +1,12 @@
 # ripple-di
 
+## 2.0.0
+
+### Major Changes
+
+- 1a79ade: Use `dispose: true` to clean up dependency values through `Symbol.asyncDispose` or `Symbol.dispose`, and use `Scope`, `Installation`, and `Runtime` with `await using`.
+  Node.js 18.18 or newer is now required.
+
 ## 1.2.0
 
 ### Minor Changes
