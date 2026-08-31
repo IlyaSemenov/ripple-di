@@ -1,7 +1,10 @@
 export type {
   Dependency,
   DependencyOptions,
+  DependencyToken,
   Disposer,
+  FactoryDependency,
+  FactoryDependencyOptions,
 } from "./dependency"
 export * from "./errors"
 export type {

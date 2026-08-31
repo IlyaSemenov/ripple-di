@@ -10,6 +10,7 @@ import {
   createScope,
   createValueOverride,
   defineDependency,
+  defineFactoryDependency,
   dispose,
   install,
   MissingProviderError,
@@ -58,6 +59,20 @@ async function checkScopedOverrides() {
     withOverrides([provide(useConfig, { url: "right" })], () => useDb().url),
   ])
   assert.deepEqual([leftUrl, rightUrl], ["left", "right"])
+}
+
+// A factory dependency resolves its factory per scope but never caches calls.
+async function checkFactoryDependency() {
+  const Create = defineFactoryDependency((label) => ({ label }))
+
+  assert.notEqual(Create("same"), Create("same"))
+  await withOverrides(
+    provide(Create, (label) => ({ label: `test:${label}` })),
+    (scope) => {
+      assert.deepEqual(Create("value"), { label: "test:value" })
+      assert.equal(scope.resolve(Create)("resolved").label, "test:resolved")
+    },
+  )
 }
 
 // A single provision needs no array, in every API that takes provisions.
@@ -175,6 +190,7 @@ async function checkShutdown() {
 
 checkAmbientRead()
 await checkScopedOverrides()
+await checkFactoryDependency()
 await checkInstallation()
 await checkOverrideRunner()
 await checkValueOverride()

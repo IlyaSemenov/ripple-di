@@ -1,10 +1,15 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 
 import {
+  type AnyFactory,
   captureDefinitionSite,
   createDependency,
+  createFactoryDependency,
   type Dependency,
   type DependencyOptions,
+  type DependencyToken,
+  type FactoryDependency,
+  type FactoryDependencyOptions,
   nodeOf,
 } from "./dependency"
 import {
@@ -84,6 +89,17 @@ export interface Runtime extends AsyncDisposable {
   ): Dependency<T>
 
   /**
+   * Defines an overrideable factory invoked with ordinary runtime arguments.
+   *
+   * Each call resolves the current factory and invokes it without caching or
+   * owning the result.
+   */
+  defineFactoryDependency<TFactory extends AnyFactory>(
+    factory: TFactory,
+    options?: FactoryDependencyOptions,
+  ): FactoryDependency<TFactory>
+
+  /**
    * Installs long-lived providers as the fallback beneath scoped overrides.
    *
    * A runtime can have one active installation, and previously created scopes
@@ -92,7 +108,7 @@ export interface Runtime extends AsyncDisposable {
   install(provisions: ProvisionInput): Installation
 
   /** Returns a dependency value from the current scope. */
-  resolve<T>(dependency: Dependency<T>): T
+  resolve<T>(dependency: DependencyToken<T>): T
 
   /** Creates a manually managed child of the current scope. */
   createScope(provisions?: ProvisionInput): Scope
@@ -138,7 +154,7 @@ export interface Runtime extends AsyncDisposable {
    * one callback.
    */
   createValueOverride<T>(
-    dependency: Dependency<T>,
+    dependency: DependencyToken<T>,
     options?: ProvideOptions<NoInfer<T>>,
   ): ValueOverride<T>
 
@@ -208,6 +224,31 @@ class RuntimeImpl implements RuntimeContext {
     })
   }
 
+  defineFactoryDependency<TFactory extends AnyFactory>(
+    factory: TFactory,
+    options: FactoryDependencyOptions = {},
+  ): FactoryDependency<TFactory> {
+    return this.defineFactoryDependencyAt(
+      factory,
+      options,
+      captureDefinitionSite(this.defineFactoryDependency),
+    )
+  }
+
+  defineFactoryDependencyAt<TFactory extends AnyFactory>(
+    factory: TFactory,
+    options: FactoryDependencyOptions,
+    definitionSite: string | undefined,
+  ): FactoryDependency<TFactory> {
+    return createFactoryDependency({
+      name: options.name ?? (factory.name || undefined),
+      definitionSite,
+      runtime: this,
+      defaultFactory: () => factory,
+      dispose: undefined,
+    })
+  }
+
   install(provisions: ProvisionInput): Installation {
     this.assertScopeManagementAllowed("Runtime.install")
     if (this.root.state !== "active") {
@@ -240,7 +281,7 @@ class RuntimeImpl implements RuntimeContext {
     return installation
   }
 
-  resolve<T>(dependency: Dependency<T>): T {
+  resolve<T>(dependency: DependencyToken<T>): T {
     const node = nodeOf(dependency)
     this.assertOwnDependency(node)
     return resolveTracked(this.currentScope(node.name), node)
@@ -283,7 +324,7 @@ class RuntimeImpl implements RuntimeContext {
   }
 
   createValueOverride<T>(
-    dependency: Dependency<T>,
+    dependency: DependencyToken<T>,
     options: ProvideOptions<NoInfer<T>> = {},
   ): ValueOverride<T> {
     this.assertOwnDependency(nodeOf(dependency))
@@ -468,6 +509,23 @@ export function defineDependency<T>(
 }
 
 /**
+ * Defines an overrideable factory invoked with ordinary runtime arguments.
+ *
+ * Each call resolves the current factory and invokes it without caching or
+ * owning the result.
+ */
+export function defineFactoryDependency<TFactory extends AnyFactory>(
+  factory: TFactory,
+  options: FactoryDependencyOptions = {},
+): FactoryDependency<TFactory> {
+  return globalRuntime.defineFactoryDependencyAt(
+    factory,
+    options,
+    captureDefinitionSite(defineFactoryDependency),
+  )
+}
+
+/**
  * Installs long-lived providers for module-level dependencies.
  *
  * Scoped overrides still take priority. Close the returned installation to
@@ -478,7 +536,7 @@ export function install(provisions: ProvisionInput): Installation {
 }
 
 /** Returns a dependency value from the current scope. */
-export function resolve<T>(dependency: Dependency<T>): T {
+export function resolve<T>(dependency: DependencyToken<T>): T {
   return globalRuntime.resolve(dependency)
 }
 
@@ -547,7 +605,7 @@ export function createOverrideRunner(
  * Ownership options given here apply to every value the helper receives.
  */
 export function createValueOverride<T>(
-  dependency: Dependency<T>,
+  dependency: DependencyToken<T>,
   options?: ProvideOptions<NoInfer<T>>,
 ): ValueOverride<T> {
   return globalRuntime.createValueOverride(dependency, options)

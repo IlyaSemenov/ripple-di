@@ -309,6 +309,45 @@ describe("resolution and tracking", () => {
     await runtime.dispose()
   })
 
+  it("tracks factory invocation reads on the active consumer branch", async () => {
+    const runtime = createRuntime()
+    const useA = runtime.defineDependency(() => "A", { name: "A" })
+    const useB = runtime.defineDependency(() => "B", { name: "B" })
+    const Foo = runtime.defineFactoryDependency(
+      (flag: boolean) => (flag ? useA() : useB()),
+      { name: "Foo" },
+    )
+    const useLeft = runtime.defineDependency(() => ({ value: Foo(true) }), {
+      name: "left",
+    })
+    const useRight = runtime.defineDependency(() => ({ value: Foo(false) }), {
+      name: "right",
+    })
+    const rootLeft = runtime.resolve(useLeft)
+    const rootRight = runtime.resolve(useRight)
+    const overrideA = runtime.createScope(provide(useA, "override-A"))
+    const overrideB = runtime.createScope(provide(useB, "override-B"))
+    const overrideFoo = runtime.createScope(
+      provide(Foo, (flag) => (flag ? "override-left" : "override-right")),
+    )
+
+    expect(overrideA.resolve(useLeft)).toEqual({ value: "override-A" })
+    expect(overrideA.resolve(useLeft)).not.toBe(rootLeft)
+    expect(overrideA.resolve(useRight)).toBe(rootRight)
+    expect(overrideB.resolve(useLeft)).toBe(rootLeft)
+    expect(overrideB.resolve(useRight)).toEqual({ value: "override-B" })
+    expect(overrideB.resolve(useRight)).not.toBe(rootRight)
+    expect(overrideFoo.resolve(useLeft)).toEqual({ value: "override-left" })
+    expect(overrideFoo.resolve(useLeft)).not.toBe(rootLeft)
+    expect(overrideFoo.resolve(useRight)).toEqual({ value: "override-right" })
+    expect(overrideFoo.resolve(useRight)).not.toBe(rootRight)
+
+    await overrideA.close()
+    await overrideB.close()
+    await overrideFoo.close()
+    await runtime.dispose()
+  })
+
   it("detects a complete cycle but ignores an inactive conditional cycle", async () => {
     const runtime = createRuntime()
     let useA!: Dependency<number>

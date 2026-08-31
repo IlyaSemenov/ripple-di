@@ -8,7 +8,9 @@ import {
   createValueOverride,
   type Dependency,
   defineDependency,
+  defineFactoryDependency,
   dispose,
+  type FactoryDependency,
   type Installation,
   install,
   MissingProviderError,
@@ -75,6 +77,99 @@ describe("consumer site", () => {
     expect("reset" in useDb).toBe(false)
     expect("setFactory" in useDb).toBe(false)
     expect("provide" in useDb).toBe(false)
+  })
+})
+
+describe("factory dependency", () => {
+  it("resolves the current factory and preserves its receiver", async () => {
+    const defaultFactory = function (this: { prefix: string }, value: number) {
+      return `${this.prefix}:${value}`
+    }
+    const Format = defineFactoryDependency(defaultFactory)
+    const replacement = function (this: { prefix: string }, value: number) {
+      return `${this.prefix}:${value * 2}`
+    }
+
+    expect(Format.call({ prefix: "default" }, 2)).toBe("default:2")
+    expect(resolve(Format)).toBe(defaultFactory)
+
+    const scope = createScope()
+    expect(scope.resolve(Format)).toBe(defaultFactory)
+    await scope.close()
+
+    await withOverrides(provide(Format, replacement), () => {
+      expect(Format.call({ prefix: "override" }, 2)).toBe("override:4")
+      expect(resolve(Format)).toBe(replacement)
+    })
+    await withOverrides(
+      provideFactory(Format, () => replacement),
+      () => {
+        expect(Format.call({ prefix: "factory" }, 3)).toBe("factory:6")
+      },
+    )
+  })
+
+  it("preserves optional, rest, async, void, generic, and overloaded signatures", () => {
+    const queryFactory = (
+      sql: string,
+      params?: readonly unknown[],
+    ): Promise<{ sql: string; params: readonly unknown[] | undefined }> =>
+      Promise.resolve({ sql, params })
+    const Query = defineFactoryDependency(queryFactory)
+    const Count = defineFactoryDependency(
+      (...values: string[]) => values.length,
+    )
+    const Notify = defineFactoryDependency((_message: string): void => {})
+    const Identity = defineFactoryDependency(<T>(value: T): T => value)
+    function Convert(value: string): number
+    function Convert(value: number): string
+    function Convert(value: string | number): string | number {
+      return typeof value === "string" ? value.length : String(value)
+    }
+    const ConvertValue = defineFactoryDependency(Convert)
+
+    expectTypeOf(Query).toEqualTypeOf<FactoryDependency<typeof queryFactory>>()
+    expectTypeOf<Parameters<typeof Query>>().toEqualTypeOf<
+      [sql: string, params?: readonly unknown[]]
+    >()
+    expectTypeOf<ReturnType<typeof Query>>().toEqualTypeOf<
+      Promise<{
+        sql: string
+        params: readonly unknown[] | undefined
+      }>
+    >()
+    expectTypeOf(resolve(Query)).toEqualTypeOf<typeof queryFactory>()
+    expectTypeOf(Count("a", "b")).toEqualTypeOf<number>()
+    expectTypeOf(Notify("done")).toEqualTypeOf<void>()
+    expectTypeOf(Identity({ id: 1 })).toEqualTypeOf<{ id: number }>()
+    expectTypeOf(ConvertValue("1")).toEqualTypeOf<number>()
+    expectTypeOf(ConvertValue(1)).toEqualTypeOf<string>()
+  })
+
+  it("does not cache invocation results and isolates parallel overrides", async () => {
+    const Create = defineFactoryDependency((label: string) => ({ label }))
+
+    expect(Create("same")).not.toBe(Create("same"))
+
+    const [left, right] = await Promise.all([
+      withOverrides(
+        provide(Create, (label) => ({ label: `A:${label}` })),
+        async () => {
+          await Promise.resolve()
+          return Create("x")
+        },
+      ),
+      withOverrides(
+        provide(Create, (label) => ({ label: `B:${label}` })),
+        async () => {
+          await Promise.resolve()
+          return Create("x")
+        },
+      ),
+    ])
+
+    expect(left).toEqual({ label: "A:x" })
+    expect(right).toEqual({ label: "B:x" })
   })
 })
 
@@ -477,5 +572,7 @@ describe("invalid consumer syntax", () => {
     })
     // @ts-expect-error A value override disposes the value of its dependency.
     createValueOverride(useConfig, { dispose: (value: string) => value.length })
+    // @ts-expect-error Factory dependency options do not own invocation results.
+    defineFactoryDependency(() => "value", { dispose: () => {} })
   })
 })

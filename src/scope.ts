@@ -1,4 +1,4 @@
-import { cleanupOf, type Dependency, nodeOf } from "./dependency"
+import { cleanupOf, type DependencyToken, nodeOf } from "./dependency"
 import {
   CrossRuntimeDependencyError,
   DetachedContextOwnedProvisionError,
@@ -40,7 +40,7 @@ export type ScopeState = "active" | "retiring" | "closing" | "closed"
  */
 export interface Scope extends AsyncDisposable {
   /** Returns a dependency value explicitly from this scope. */
-  resolve<T>(dependency: Dependency<T>): T
+  resolve<T>(dependency: DependencyToken<T>): T
   /** Creates a child scope with optional dependency overrides. */
   createScope(provisions?: ProvisionInput): Scope
   /** Makes this scope current while the callback runs without closing it. */
@@ -103,7 +103,7 @@ export class ScopeImpl implements ScopeContext {
     parent?.children.add(this)
   }
 
-  resolve<T>(dependency: Dependency<T>): T {
+  resolve<T>(dependency: DependencyToken<T>): T {
     const node = nodeOf(dependency)
     return resolveTracked(this, node)
   }

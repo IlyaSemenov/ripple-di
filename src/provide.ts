@@ -1,4 +1,4 @@
-import type { Dependency, Disposer } from "./dependency"
+import type { DependencyToken, Disposer } from "./dependency"
 import { nodeOf } from "./dependency"
 import { OwnedProvisionReuseError } from "./errors"
 import type { ProviderSpec } from "./graph"
@@ -31,7 +31,7 @@ export interface ProvideOptions<T> {
 }
 
 export interface ProvisionRecord<T> {
-  readonly dependency: Dependency<T>
+  readonly dependency: DependencyToken<T>
   readonly spec: ProviderSpec<T>
 }
 
@@ -39,7 +39,7 @@ const provisionRecords = new WeakMap<object, ProvisionRecord<unknown>>()
 const claimedOwnedProvisions = new WeakSet<object>()
 
 function createProvision<T>(
-  dependency: Dependency<T>,
+  dependency: DependencyToken<T>,
   spec: ProviderSpec<T>,
 ): Provision {
   nodeOf(dependency)
@@ -109,7 +109,7 @@ export function claimOwnedProvisions<TPrepared>(
  * installation.
  */
 export function provide<T>(
-  dependency: Dependency<T>,
+  dependency: DependencyToken<T>,
   value: NoInfer<T>,
   options: ProvideOptions<NoInfer<T>> = {},
 ): Provision {
@@ -151,7 +151,7 @@ export function provide<T>(
  * its owner closes.
  */
 export function provideFactory<T>(
-  dependency: Dependency<T>,
+  dependency: DependencyToken<T>,
   factory: () => FactoryResult<NoInfer<T>>,
 ): Provision {
   return createProvision(dependency, { kind: "factory", factory })

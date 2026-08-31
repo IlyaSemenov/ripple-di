@@ -1,4 +1,4 @@
-import type { Dependency } from "./dependency"
+import type { DependencyToken } from "./dependency"
 import type { RuntimeContext, ScopeContext } from "./graph"
 import { type ProvideOptions, type ProvisionInput, provide } from "./provide"
 import { type Scope, withChildScope } from "./scope"
@@ -129,7 +129,7 @@ export type ValueOverride<T> = <TCallbackResult>(
 /** Creates a value override bound to one dependency of one runtime. */
 export function createValueOverrideFor<T>(
   runtime: RuntimeContext,
-  dependency: Dependency<T>,
+  dependency: DependencyToken<T>,
   options: ProvideOptions<NoInfer<T>>,
 ): ValueOverride<T> {
   return <TCallbackResult>(

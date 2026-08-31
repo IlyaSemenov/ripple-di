@@ -64,6 +64,7 @@ The package is published as ESM.
 | You want to                                   | Call
 | --------------------------------------------- | --------------------------------------------------
 | Define an input, derived value, or service    | `defineDependency`
+| Define an overrideable factory                | `defineFactoryDependency`
 | Supply the application's values at startup    | `install` with `provide` or `provideFactory`
 | Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
 | Continue every current override layer         | `withDetachedContext`
@@ -94,7 +95,8 @@ Reading it without a provider throws `MissingProviderError`.
 
 Pass a factory when the dependency has a built-in value.
 The factory runs lazily, and calls to other dependencies inside it are tracked.
-A function in the first argument is always the factory, so a dependency whose value is itself a function wraps it: `defineDependency(() => handler)`.
+
+A function passed first is always the dependency factory, so wrap a function value in another function (`defineDependency(() => handler)`) or use [`defineFactoryDependency`](#define-factory-dependencies) to call it directly with runtime arguments.
 
 ```ts
 const useClock = defineDependency(() => systemClock)
@@ -109,31 +111,7 @@ Pass a callback, or pass `true` to use the value's standard disposal method (`Sy
 
 A factory can read dependencies, but cannot create, enter, close, or retire scopes and installations in its own runtime; misuse throws `FactoryScopeOperationError`.
 
-### Promises and thenables
-
-A factory returns the value itself, synchronously; disposers may be asynchronous.
-
-```ts
-import { asValue, defineDependency } from "ripple-di"
-
-// The usual case: the factory returns the value.
-defineDependency(() => createSessionStore())
-
-// Reading this throws AsyncFactoryError: reads made after an await are not tracked.
-defineDependency(async () => loadSession())
-
-// The promise itself is the cached dependency value.
-defineDependency(() => asValue(loadSession()))
-
-// A query builder implements `then` but is an ordinary value.
-defineDependency(() => selectSessions())
-```
-
-A factory is rejected only when it returns a native `Promise` object, so a value that merely implements `then` is stored as it is.
-Wrap the result in `asValue` when the promise itself is the value the dependency holds.
-
-`asValue` marks the promise as the value and does nothing else.
-The dependencies its asynchronous work reads after an `await` are still untracked, so a promise cached for the whole application can end up built from the temporary values of whichever scope started it.
+A dependency factory returns synchronously; see [Promises and thenables](#promises-and-thenables) when the value itself is asynchronous.
 
 ## Override dependencies
 
@@ -183,52 +161,7 @@ Use such a value inside the callback, and use `createScope` when it has to outli
 Wrapping the value in an object prevents it from being awaited, but the temporary scope still closes before the caller receives it.
 Anything that scope owned has already been cleaned up.
 
-### Continue after the current scope closes
-
-`withDetachedContext` and `withDetachedOverrides` run work outside the current ambient scope, so a request or another scoped operation can close while that work continues.
-
-Use `withDetachedContext` to continue with every override layer that is active when you call it:
-
-```ts
-import { withDetachedContext } from "ripple-di"
-
-const backgroundTask = withDetachedContext(() =>
-  updateTenantSearchIndex(),
-)
-
-trackBackgroundTask(backgroundTask)
-```
-
-It reproduces those layers in new scopes without copying cached dependency values.
-Borrowed values keep their identity, while factory provisions run again and their results belong to the new scopes.
-If a layer owns an existing provided value, the call rejects with `DetachedContextOwnedProvisionError` because the value cannot belong to both contexts.
-
-Use `withDetachedOverrides` when the work should receive only selected values, especially across a security-sensitive boundary:
-
-```ts
-import { provide, withDetachedOverrides } from "ripple-di"
-
-const tenant = useTenant()
-
-const backgroundTask = withDetachedOverrides(
-  provide(useTenant, tenant),
-  () => updateTenantSearchIndex(),
-)
-
-trackBackgroundTask(backgroundTask)
-```
-
-Both functions create scopes beneath the active installation, or beneath the runtime root when no installation is active.
-Closing the installation or calling `dispose()` force-closes them, and an unfinished root child prevents `install()`.
-
-The scope remains current while the callback runs and while Ripple DI awaits its result.
-The returned promise settles after cleanup, so code that needs the detached context, including finalization, belongs inside the callback:
-
-```ts
-withDetachedContext(() =>
-  runBackgroundTask().finally(finalizeBackgroundTask),
-)
-```
+Use [detached context](#continue-after-the-current-scope-closes) when work must continue after the current scope closes.
 
 ## Where a value belongs
 
@@ -460,6 +393,79 @@ test("creates a user", testConfigOverrides.wrap(() => createUser()))
 
 Everything below is optional.
 
+### Define factory dependencies
+
+Use `defineFactoryDependency` when the dependency value is itself a factory that application code calls with runtime arguments.
+
+```ts
+import { defineFactoryDependency } from "ripple-di"
+
+const useLog = defineFactoryDependency(
+  (area: string) =>
+    (...values: unknown[]) => console.log(`[${area}]`, ...values),
+)
+
+const billingLog = useLog("billing")
+billingLog("invoice created", 42)
+```
+
+Each call resolves the factory selected for the current scope and invokes it with the given arguments.
+The arguments and result are ordinary program values.
+
+`defineFactoryDependency` does not:
+
+- Cache invocation results, whether by arguments or otherwise.
+- Add runtime arguments or individual invocations to the dependency graph.
+- Own or clean up invocation results.
+- Create scopes for the objects it returns.
+
+Replace the factory itself with `provide`.
+
+```ts
+const messages: unknown[][] = []
+
+await withOverrides(
+  provide(
+    useLog,
+    area => (...values) => messages.push([area, ...values]),
+  ),
+  () => useLog("billing")("invoice created", 42),
+)
+```
+
+Calls made by the selected factory participate in a dependency factory that is already being evaluated.
+For example, when `useView` calls `useLog("billing")` and that factory reads `useConfig()`, `useView` tracks both `useLog` and `useConfig` directly.
+A direct `useLog("billing")` call has no lasting dependency graph entry, but every dependency it reads still resolves from the current scope.
+
+`resolve(useLog)` and `scope.resolve(useLog)` return the selected factory without invoking it.
+Use `provideFactory(useLog, () => factory)` only when constructing the factory value itself must be lazy and tracked.
+
+### Promises and thenables
+
+A factory returns the value itself, synchronously; disposers may be asynchronous.
+
+```ts
+import { asValue, defineDependency } from "ripple-di"
+
+// The usual case: the factory returns the value.
+defineDependency(() => createSessionStore())
+
+// Reading this throws AsyncFactoryError: reads made after an await are not tracked.
+defineDependency(async () => loadSession())
+
+// The promise itself is the cached dependency value.
+defineDependency(() => asValue(loadSession()))
+
+// A query builder implements `then` but is an ordinary value.
+defineDependency(() => selectSessions())
+```
+
+A factory is rejected only when it returns a native `Promise` object, so a value that merely implements `then` is stored as it is.
+Wrap the result in `asValue` when the promise itself is the value the dependency holds.
+
+`asValue` marks the promise as the value and does nothing else.
+The dependencies its asynchronous work reads after an `await` are still untracked, so a promise cached for the whole application can end up built from the temporary values of whichever scope started it.
+
 ### Choose how to provide a value
 
 Each form of `provide` answers one question: who cleans the value up?
@@ -530,6 +536,53 @@ await scope.run(() => processTenant())
 - Cleanup continues past a failing disposer and reports every failure in one `AggregateError`.
 - A disposer, and any async work it starts, cannot read dependencies or manage scopes and installations in the runtime being closed; misuse throws `DisposerContextError`.
   Put everything cleanup needs into the dependency value itself.
+
+### Continue after the current scope closes
+
+`withDetachedContext` and `withDetachedOverrides` run work outside the current ambient scope, so a request or another scoped operation can close while that work continues.
+
+Use `withDetachedContext` to continue with every override layer that is active when you call it:
+
+```ts
+import { withDetachedContext } from "ripple-di"
+
+const backgroundTask = withDetachedContext(() =>
+  updateTenantSearchIndex(),
+)
+
+trackBackgroundTask(backgroundTask)
+```
+
+It reproduces those layers in new scopes without copying cached dependency values.
+Borrowed values keep their identity, while factory provisions run again and their results belong to the new scopes.
+If a layer owns an existing provided value, the call rejects with `DetachedContextOwnedProvisionError` because the value cannot belong to both contexts.
+
+Use `withDetachedOverrides` when the work should receive only selected values, especially across a security-sensitive boundary:
+
+```ts
+import { provide, withDetachedOverrides } from "ripple-di"
+
+const tenant = useTenant()
+
+const backgroundTask = withDetachedOverrides(
+  provide(useTenant, tenant),
+  () => updateTenantSearchIndex(),
+)
+
+trackBackgroundTask(backgroundTask)
+```
+
+Both functions create scopes beneath the active installation, or beneath the runtime root when no installation is active.
+Closing the installation or calling `dispose()` force-closes them, and an unfinished root child prevents `install()`.
+
+The scope remains current while the callback runs and while Ripple DI awaits its result.
+The returned promise settles after cleanup, so code that needs the detached context, including finalization, belongs inside the callback:
+
+```ts
+withDetachedContext(() =>
+  runBackgroundTask().finally(finalizeBackgroundTask),
+)
+```
 
 ### Name an override you write repeatedly
 
@@ -637,6 +690,7 @@ Pass `name` to `createRuntime` to see that name in error messages.
 Every runtime has the same methods, and each has a module-level counterpart that targets the built-in runtime:
 
 - `defineDependency`
+- `defineFactoryDependency`
 - `install`
 - `resolve`
 - `createScope`

@@ -1,6 +1,6 @@
 import type { AsyncLocalStorage } from "node:async_hooks"
 
-import type { Dependency, Disposer } from "./dependency"
+import type { DependencyToken, Disposer } from "./dependency"
 import type { ProvisionInput } from "./provide"
 import type { Runtime } from "./runtime"
 import type { Scope, ScopeState } from "./scope"
@@ -44,7 +44,7 @@ export interface DependencyNode<T> {
   readonly id: number
   readonly name: string
   readonly runtime: RuntimeContext
-  readonly dependency: Dependency<T>
+  readonly dependency: DependencyToken<T>
   readonly defaultFactory: (() => FactoryResult<T>) | undefined
   readonly dispose: Disposer<T> | true | undefined
 }
@@ -53,7 +53,7 @@ export interface DependencyNode<T> {
 export interface BindingStamp<T = unknown> {
   readonly kind: "binding"
   readonly identity: symbol
-  readonly dependency: Dependency<T>
+  readonly dependency: DependencyToken<T>
   readonly home: ScopeContext
 }
 
@@ -61,7 +61,7 @@ export interface BindingStamp<T = unknown> {
 export interface CellStamp<T = unknown> {
   readonly kind: "cell"
   readonly identity: symbol
-  readonly dependency: Dependency<T>
+  readonly dependency: DependencyToken<T>
   readonly home: ScopeContext
 }
 
@@ -80,7 +80,7 @@ export interface ResolutionRef<T> {
 
 /** One actual direct callable read recorded during factory evaluation. */
 export interface DependencyRecord {
-  readonly dependency: Dependency<unknown>
+  readonly dependency: DependencyToken<unknown>
   readonly stamp: DependencyStamp
 }
 
@@ -91,7 +91,7 @@ export interface DependencyRecord {
  * finalizer.
  */
 export interface Cell<T> extends ResolutionRef<T> {
-  readonly dependency: Dependency<T>
+  readonly dependency: DependencyToken<T>
   readonly node: DependencyNode<T>
   readonly owner: ScopeContext
   readonly stamp: CellStamp<T>

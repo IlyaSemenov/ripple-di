@@ -3,14 +3,33 @@ import type { FactoryResult } from "./value"
 
 declare const dependencyBrand: unique symbol
 
+/** Internal callable constraint that preserves a factory's concrete signature. */
+export type AnyFactory = (...args: never[]) => unknown
+
+/** Opaque identity accepted by provision and explicit resolution APIs. */
+export interface DependencyToken<T> {
+  readonly [dependencyBrand]: (value: T) => T
+}
+
 /**
  * A function that returns the dependency value for the current scope.
  *
  * Pass the same function to `provide` to replace its value or to
  * `scope.resolve` when you need to read from a specific scope.
  */
-export type Dependency<T> = (() => T) & {
-  readonly [dependencyBrand]: (value: T) => T
+export type Dependency<T> = (() => T) & DependencyToken<T>
+
+/**
+ * An overrideable factory selected from the current scope and invoked with
+ * ordinary runtime arguments.
+ */
+export type FactoryDependency<TFactory extends AnyFactory> = TFactory &
+  DependencyToken<TFactory>
+
+/** Optional diagnostics for a factory dependency. */
+export interface FactoryDependencyOptions {
+  /** Optional name used only in error messages and resolution paths. */
+  readonly name?: string
 }
 
 /** Cleans up a value when Ripple DI no longer needs it. */
@@ -99,9 +118,12 @@ class DependencyNodeImpl<T> implements DependencyNode<T> {
   readonly runtime: RuntimeContext
   readonly defaultFactory: (() => FactoryResult<T>) | undefined
   readonly dispose: DependencyNode<T>["dispose"]
-  readonly dependency: Dependency<T>
+  readonly dependency: DependencyToken<T>
 
-  constructor(definition: DependencyDefinition<T>) {
+  constructor(
+    definition: DependencyDefinition<T>,
+    createCallable: (read: () => T) => DependencyToken<T>,
+  ) {
     const generatedName = `dependency#${this.id}`
     this.name =
       definition.name ??
@@ -111,7 +133,7 @@ class DependencyNodeImpl<T> implements DependencyNode<T> {
     this.runtime = definition.runtime
     this.defaultFactory = definition.defaultFactory
     this.dispose = definition.dispose
-    this.dependency = (() => this.runtime.readCallable(this)) as Dependency<T>
+    this.dependency = createCallable(() => this.runtime.readCallable(this))
   }
 }
 
@@ -173,12 +195,31 @@ function definitionSiteFromFrame(frame: string): string | undefined {
 export function createDependency<T>(
   definition: DependencyDefinition<T>,
 ): Dependency<T> {
-  const node = new DependencyNodeImpl(definition)
-  dependencyNodes.set(node.dependency, node as DependencyNode<unknown>)
-  return node.dependency
+  return createCallableDependency(definition, (read) => read as Dependency<T>)
 }
 
-export function nodeOf<T>(dependency: Dependency<T>): DependencyNode<T> {
+/** Creates a callable that resolves and invokes its factory value per call. */
+export function createFactoryDependency<TFactory extends AnyFactory>(
+  definition: DependencyDefinition<TFactory>,
+): FactoryDependency<TFactory> {
+  return createCallableDependency(definition, (read) => {
+    const dependency = function (this: unknown, ...args: unknown[]) {
+      return Reflect.apply(read(), this, args as never[])
+    }
+    return dependency as unknown as FactoryDependency<TFactory>
+  })
+}
+
+function createCallableDependency<T, TDependency extends DependencyToken<T>>(
+  definition: DependencyDefinition<T>,
+  createCallable: (read: () => T) => TDependency,
+): TDependency {
+  const node = new DependencyNodeImpl(definition, createCallable)
+  dependencyNodes.set(node.dependency, node as DependencyNode<unknown>)
+  return node.dependency as TDependency
+}
+
+export function nodeOf<T>(dependency: DependencyToken<T>): DependencyNode<T> {
   const node = dependencyNodes.get(dependency)
   if (!node) {
     throw new TypeError(
