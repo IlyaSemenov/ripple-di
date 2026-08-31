@@ -80,6 +80,10 @@ Factory-created values are reused whenever their provider and recorded dependenc
   A factory passed as the first argument is the only way to define a built-in fallback; do not add `default`, `value`, or `initial` options.
   Factories may resolve dependencies from their current scope but cannot manage installation or scope context and lifecycle in their own runtime.
 - A dependency disposer applies only to values owned by Ripple DI: its built-in factory, `provideFactory`, and `provide` with `dispose: true`.
+  `dispose: true` in `defineDependency` uses `Symbol.asyncDispose` with `Symbol.dispose` as its fallback.
+  Capture the selected method when the value receives its owner, call it with the value as its receiver, and never call both methods.
+  Ignore the return value of `Symbol.dispose` and await the result of `Symbol.asyncDispose`.
+  An explicit dependency disposer takes precedence over the standard disposal protocol.
   Values passed to plain `provide` are borrowed unless an explicit `options.dispose` callback transfers ownership to the receiving scope or installation.
   Keep `options.dispose: true` as reuse of the dependency's configured disposer and reject it when no disposer is configured.
   An explicit `options.dispose` callback applies to the supplied value instead of the dependency's configured disposer.
@@ -92,6 +96,7 @@ Factory-created values are reused whenever their provider and recorded dependenc
   All teardown errors are aggregated after cleanup continues.
 - Check installation lifecycle guards on every `close()` call, including calls after close has settled.
   Keep close bookkeeping in the returned promise chain so ignored teardown failures remain unhandled rejections.
+  Keep `Scope`, `Installation`, and `Runtime` asynchronously disposable by delegating `Symbol.asyncDispose` to their existing `close()` or `dispose()` method.
 - Overrides create child scopes and never mutate existing scopes.
   An override runner is immutable: `extend()` returns a new runner, and every `run()` call re-invokes each layer's provision factory and enters one child scope per layer, outermost layer first.
   `wrap()` performs one `run()` per call of the returned function, forwards its arguments and receiver, and prepares nothing before it is called.
@@ -139,4 +144,4 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - Run `bun types` to type-check production code and tests when public types change.
 - Run `bun run build` for package export, declaration, publint, and arethetypeswrong validation.
 - Run `bun smoke` after a build when the runtime surface or the claimed runtime support changes.
-  CI repeats that smoke test on Bun, Node 18, Node 24, and Deno, and a release waits for it.
+  CI repeats that smoke test on Bun, Node 18.18.0, Node 24, and Deno, and a release waits for it.

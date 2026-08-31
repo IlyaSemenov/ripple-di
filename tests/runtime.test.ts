@@ -42,6 +42,15 @@ describe("runtime instances", () => {
     expect(runtime.resolve(useValue)).toBe(1)
     await runtime.dispose()
   })
+
+  it("delegates asynchronous disposal to the runtime lifecycle", async () => {
+    const runtime = createRuntime()
+    const useValue = runtime.defineDependency(() => 1)
+
+    runtime.resolve(useValue)
+    await runtime[Symbol.asyncDispose]()
+    expect(() => runtime.resolve(useValue)).toThrow(ScopeClosedError)
+  })
 })
 
 describe("installation", () => {
@@ -85,6 +94,17 @@ describe("installation", () => {
     expect(disposed).toEqual(["scoped", "installed"])
     expect(() => child.resolve(useService)).toThrow(ScopeClosedError)
     expect(() => runtime.resolve(useConfig)).toThrow(MissingProviderError)
+    await runtime.dispose()
+  })
+
+  it("delegates asynchronous disposal to installation close", async () => {
+    const runtime = createRuntime()
+    const useValue = runtime.defineDependency<number>()
+    const installation = runtime.install(provide(useValue, 1))
+
+    expect(runtime.resolve(useValue)).toBe(1)
+    await installation[Symbol.asyncDispose]()
+    expect(() => runtime.resolve(useValue)).toThrow(MissingProviderError)
     await runtime.dispose()
   })
 

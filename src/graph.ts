@@ -18,7 +18,7 @@ export type ProviderSpec<T> =
   | {
       readonly kind: "owned-value"
       readonly value: T
-      readonly dispose: Disposer<T>
+      readonly dispose: Disposer<T> | true
     }
   | {
       readonly kind: "factory"
@@ -46,7 +46,7 @@ export interface DependencyNode<T> {
   readonly runtime: RuntimeContext
   readonly dependency: Dependency<T>
   readonly defaultFactory: (() => FactoryResult<T>) | undefined
-  readonly dispose: Disposer<T> | undefined
+  readonly dispose: Disposer<T> | true | undefined
 }
 
 /** Identity of one provider installation, including a runtime-specific default. */

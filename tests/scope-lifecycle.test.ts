@@ -457,6 +457,93 @@ describe("owned value lifecycle", () => {
     await runtime.dispose()
   })
 
+  it("prefers asynchronous standard cleanup for factory-owned values", async () => {
+    const runtime = createRuntime()
+    const disposals: string[] = []
+    const useResource = runtime.defineDependency(
+      () => ({
+        async [Symbol.asyncDispose]() {
+          await delay(ASYNC_CONTEXT_DELAY_MS)
+          disposals.push("async")
+        },
+        [Symbol.dispose]() {
+          disposals.push("sync")
+        },
+      }),
+      { name: "resource", dispose: true },
+    )
+
+    runtime.resolve(useResource)
+    await runtime.dispose()
+    expect(disposals).toEqual(["async"])
+  })
+
+  it("falls back to synchronous standard cleanup for provideFactory", async () => {
+    const runtime = createRuntime()
+    const disposals: string[] = []
+    const useResource = runtime.defineDependency<Disposable>({
+      name: "resource",
+      dispose: true,
+    })
+    const scope = runtime.createScope(
+      provideFactory(useResource, () => ({
+        [Symbol.dispose]() {
+          disposals.push("sync")
+        },
+      })),
+    )
+
+    scope.resolve(useResource)
+    await scope.close()
+    expect(disposals).toEqual(["sync"])
+    await runtime.dispose()
+  })
+
+  it("captures standard cleanup for handed-over values and borrows plain values", async () => {
+    const runtime = createRuntime()
+    const disposals: string[] = []
+    const useResource = runtime.defineDependency<AsyncDisposable>({
+      name: "resource",
+      dispose: true,
+    })
+    const owned = {
+      async [Symbol.asyncDispose]() {
+        disposals.push("captured")
+      },
+    }
+    const borrowed = {
+      async [Symbol.asyncDispose]() {
+        disposals.push("borrowed")
+      },
+    }
+    const ownedScope = runtime.createScope(
+      provide(useResource, owned, { dispose: true }),
+    )
+    const borrowedScope = runtime.createScope(provide(useResource, borrowed))
+
+    owned[Symbol.asyncDispose] = async () => {
+      disposals.push("replacement")
+    }
+    await ownedScope.close()
+    await borrowedScope.close()
+    expect(disposals).toEqual(["captured"])
+    await runtime.dispose()
+  })
+
+  it("rejects standard cleanup when an owned value has no disposal method", async () => {
+    const runtime = createRuntime()
+    const useResource = runtime.defineDependency(() => ({}), {
+      name: "resource",
+      dispose: true,
+    })
+
+    expect(() => runtime.resolve(useResource)).toThrow(
+      'Dependency "resource" configured dispose: true, but its owned value ' +
+        "implements neither Symbol.asyncDispose nor Symbol.dispose.",
+    )
+    await runtime.dispose()
+  })
+
   it("disposes unread owned values but not unread borrowed values", async () => {
     const runtime = createRuntime()
     const useOwned = runtime.defineDependency<object>({ name: "owned" })
@@ -784,6 +871,15 @@ describe("owned value lifecycle", () => {
 })
 
 describe("retire and close", () => {
+  it("delegates asynchronous disposal to close", async () => {
+    const runtime = createRuntime()
+    const scope = runtime.createScope()
+
+    await scope[Symbol.asyncDispose]()
+    expect(() => scope.run(() => {})).toThrow(ScopeClosedError)
+    await runtime.dispose()
+  })
+
   it("retire waits for live children while they can inherit from the parent", async () => {
     const runtime = createRuntime()
     const useValue = runtime.defineDependency<string>({ name: "value" })

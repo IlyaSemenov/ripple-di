@@ -23,7 +23,7 @@
   "license": "MIT",
   "sideEffects": false,
   "engines": {
-    "node": ">=18"
+    "node": ">=18.18.0"
   },
   "packageManager": "bun@1.4.0",
   "repository": {

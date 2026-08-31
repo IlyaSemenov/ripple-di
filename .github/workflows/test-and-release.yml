@@ -45,9 +45,9 @@ jobs:
       - name: Setup oldest supported Node
         uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 18.18.0
 
-      - name: Smoke test on Node 18
+      - name: Smoke test on Node 18.18.0
         run: node tests/smoke.mjs
 
       - name: Setup current Node

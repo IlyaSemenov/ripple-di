@@ -1,4 +1,4 @@
-import { type Dependency, nodeOf } from "./dependency"
+import { cleanupOf, type Dependency, nodeOf } from "./dependency"
 import {
   CrossRuntimeDependencyError,
   DetachedContextOwnedProvisionError,
@@ -38,7 +38,7 @@ export type ScopeState = "active" | "retiring" | "closing" | "closed"
  * Scope management and lifecycle methods cannot be called from a dependency
  * factory or disposer in the same runtime.
  */
-export interface Scope {
+export interface Scope extends AsyncDisposable {
   /** Returns a dependency value explicitly from this scope. */
   resolve<T>(dependency: Dependency<T>): T
   /** Creates a child scope with optional dependency overrides. */
@@ -152,10 +152,23 @@ export class ScopeImpl implements ScopeContext {
     return this.lifecycle.promise
   }
 
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close()
+  }
+
   publish<T>(cell: Cell<T>, requestedScope: ScopeContext): void {
     if (this.state !== "active" && this.state !== "retiring") {
       throw new ScopeClosedError(cell.node.name, this.name, this.id, this.state)
     }
+
+    // Prepare cleanup before publishing so an invalid standard disposer cannot
+    // leave a partially cached cell behind.
+    const finalizer = cell.node.dispose
+      ? {
+          cell: cell as Cell<unknown>,
+          run: cleanupOf(cell.node.name, cell.value, cell.node.dispose),
+        }
+      : undefined
 
     this.ownedCells.set(
       cell.node as DependencyNode<unknown>,
@@ -170,12 +183,8 @@ export class ScopeImpl implements ScopeContext {
       cell as ResolutionRef<unknown>,
     )
 
-    if (cell.node.dispose) {
-      const dispose = cell.node.dispose
-      this.finalizers.push({
-        cell: cell as Cell<unknown>,
-        run: () => dispose(cell.value),
-      })
+    if (finalizer) {
+      this.finalizers.push(finalizer)
     }
   }
 
@@ -195,7 +204,7 @@ export class ScopeImpl implements ScopeContext {
     if (record.spec.kind === "owned-value") {
       const { dispose, value } = record.spec
       this.finalizers.push({
-        run: () => dispose(value),
+        run: cleanupOf(node.name, value, dispose),
       })
     }
   }
@@ -305,8 +314,28 @@ function validateProvisions(
     }
     seen.add(node)
   }
-  claimOwnedProvisions(provisions)
-  return records
+
+  // Standard disposer lookup can invoke a getter and throw. Keep it inside the
+  // claim boundary so a failed lookup neither creates a scope nor consumes an
+  // owned provision.
+  return claimOwnedProvisions(provisions, () =>
+    records.map((record) => {
+      if (record.spec.kind !== "owned-value" || record.spec.dispose !== true) {
+        return record
+      }
+
+      const node = nodeOf(record.dependency)
+      const run = cleanupOf(node.name, record.spec.value, true)
+      return {
+        dependency: record.dependency,
+        spec: {
+          kind: "owned-value" as const,
+          value: record.spec.value,
+          dispose: () => run(),
+        },
+      }
+    }),
+  )
 }
 
 /**

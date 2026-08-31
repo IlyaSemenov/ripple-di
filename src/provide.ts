@@ -23,8 +23,8 @@ export interface ProvideOptions<T> {
   /**
    * Cleanup called when the receiving scope or installation closes.
    *
-   * Pass `true` to use the dependency's cleanup callback, or pass a different
-   * callback explicitly.
+   * Pass `true` to reuse the dependency's cleanup configuration, or pass a
+   * different callback explicitly.
    * Either form transfers ownership of the value to Ripple DI.
    */
   readonly dispose?: Disposer<T> | true
@@ -74,7 +74,10 @@ export function provisionListOf(input: ProvisionInput): readonly Provision[] {
  * Checking the complete list before recording claims keeps failed scope
  * creation atomic.
  */
-export function claimOwnedProvisions(provisions: readonly Provision[]): void {
+export function claimOwnedProvisions<TPrepared>(
+  provisions: readonly Provision[],
+  prepare: () => TPrepared,
+): TPrepared {
   const owned = provisions.filter(
     (provision) => provisionOf(provision).spec.kind === "owned-value",
   )
@@ -85,9 +88,14 @@ export function claimOwnedProvisions(provisions: readonly Provision[]): void {
       throw new OwnedProvisionReuseError(nodeOf(record.dependency).name)
     }
   }
+
+  // Preparation may inspect a user value and throw. Run it after reuse
+  // validation but before recording claims so the whole operation stays atomic.
+  const prepared = prepare()
   for (const provision of owned) {
     claimedOwnedProvisions.add(provision)
   }
+  return prepared
 }
 
 /**
@@ -117,7 +125,7 @@ export function provide<T>(
     const dispose = options.dispose === true ? node.dispose : options.dispose
     if (!dispose) {
       throw new TypeError(
-        `Dependency "${node.name}" has no dispose callback to reuse.`,
+        `Dependency "${node.name}" has no cleanup configuration to reuse.`,
       )
     }
     return createProvision(dependency, {
@@ -139,8 +147,8 @@ export function provide<T>(
  * The factory must be synchronous.
  * Calls to other dependencies inside it are tracked automatically.
  * The receiving scope or installation owns the created value.
- * When the dependency has a configured `dispose` callback, that callback
- * cleans up the override when its owner closes.
+ * When the dependency has configured cleanup, it cleans up the override when
+ * its owner closes.
  */
 export function provideFactory<T>(
   dependency: Dependency<T>,

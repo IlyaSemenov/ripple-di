@@ -56,7 +56,7 @@ This makes dependencies convenient to use and override, but also makes them less
 npm install ripple-di
 ```
 
-Ripple DI needs `node:async_hooks`, so it runs on Node.js 18 or newer, Bun, and Deno with Node compatibility, but not in browsers.
+Ripple DI needs `node:async_hooks` and explicit resource management symbols, so it runs on Node.js 18.18 or newer, Bun, and Deno with Node compatibility, but not in browsers.
 The package is published as ESM.
 
 ## Which function do I call?
@@ -91,6 +91,7 @@ await withOverrides(
 ```
 
 Reading it without a provider throws `MissingProviderError`.
+
 Pass a factory when the dependency has a built-in value.
 The factory runs lazily, and calls to other dependencies inside it are tracked.
 A function in the first argument is always the factory, so a dependency whose value is itself a function wraps it: `defineDependency(() => handler)`.
@@ -102,7 +103,9 @@ const usePublicUrl = defineDependency(() => createPublicUrl(useConfig()))
 
 The result is cached, and a scope that overrides one of the dependencies it read gets a separate result.
 Its type comes from the factory, so `useDb()` returns whatever `createDb` returns.
-Add a `dispose` callback when values owned by Ripple DI need cleanup, as shown by `useDb` in the example above.
+
+Configure `dispose` when values owned by Ripple DI need cleanup.
+Pass a callback, or pass `true` to use the value's standard disposal method (`Symbol.asyncDispose` or `Symbol.dispose`).
 
 A factory can read dependencies, but cannot create, enter, close, or retire scopes and installations in its own runtime; misuse throws `FactoryScopeOperationError`.
 
@@ -176,6 +179,7 @@ const [leftUsers, rightUsers] = await Promise.all([
 
 `withOverrides`, and every helper built on it, awaits what its callback returns before closing the temporary scope, so returning a query builder from one of them runs the query.
 Use such a value inside the callback, and use `createScope` when it has to outlive the callback.
+
 Wrapping the value in an object prevents it from being awaited, but the temporary scope still closes before the caller receives it.
 Anything that scope owned has already been cleaned up.
 
@@ -318,6 +322,7 @@ try {
 
 Installed providers are the fallback everywhere: request handlers, background jobs, tests, and any other code running outside a scope.
 Nothing is resolved eagerly, and a scoped override still wins over an installed provider.
+
 Closing an installation removes its providers and cleans up values whose factory or tracked dependencies belong to it.
 It keeps the runtime usable, so application-owned values remain cached for later installations.
 Use `installation.close()` before a controlled replacement; use `dispose()` to shut the application down.
@@ -458,14 +463,14 @@ Everything below is optional.
 ### Choose how to provide a value
 
 Each form of `provide` answers one question: who cleans the value up?
-The disposer configured by `defineDependency` describes how to clean up an owned value; it does not make a plain provided value owned.
+The cleanup configured by `defineDependency` describes how to clean up an owned value; it does not make a plain provided value owned.
 
 ```ts
 // You own the value. Ripple DI uses it in the scope and never disposes it.
 provide(useConfig, testConfig)
 
 // The scope creates the value on first read, owns it, and cleans it up with
-// the dispose callback from the dependency definition.
+// the cleanup from the dependency definition.
 provideFactory(useDb, () => createFakeDb())
 
 // You hand an existing value over to the scope, cleaned up the same way.
@@ -478,7 +483,9 @@ provide(useDb, fakeDb, { dispose: db => db.closeImmediately() })
 A function passed to `provide` stays an ordinary function value; use `provideFactory` when it should build the value instead.
 The dependencies an override factory reads are tracked like the ones read by the factory it replaces.
 An override factory cannot read the previous value of the dependency it replaces; define a base dependency and a decorated one instead.
-`dispose: true` reuses the disposer from `defineDependency`, so it throws right away when the dependency declares none.
+
+`dispose: true` in `provide` reuses the dependency's cleanup configuration, so it throws right away when the dependency declares none.
+Plain provided values remain borrowed even when they implement either symbol.
 
 A provision that hands over ownership belongs to a single scope or installation.
 Using it a second time throws `OwnedProvisionReuseError`, so create a separate value for each owner.
@@ -502,18 +509,16 @@ The installed factory is lazy, and its queue client is closed either with the in
 
 Use `withOverrides` when one callback covers the whole lifetime.
 Use `createScope` when several operations share the same overrides and close at a boundary you manage yourself.
+`Scope` implements `AsyncDisposable`, so TypeScript code can express that boundary with `await using`:
 
 ```ts
 import { createScope, provide } from "ripple-di"
 
-const scope = createScope(provide(useConfig, tenantConfig))
-
-try {
-  await scope.run(() => processTenant())
-} finally {
-  await scope.close()
-}
+await using scope = createScope(provide(useConfig, tenantConfig))
+await scope.run(() => processTenant())
 ```
+
+`Installation` delegates the same protocol to `close()`, and `Runtime` delegates it to `dispose()`.
 
 - `scope.run` makes the scope current for a callback without closing it, and returns the callback's result unchanged.
 - `scope.resolve(useDb)` reads a dependency from that scope rather than the current one.
@@ -627,6 +632,7 @@ await Promise.all([
 
 A dependency belongs to the runtime that defined it and cannot be read or overridden in another one.
 The module-level `defineDependency` always defines a dependency of the built-in runtime, so an application factory like the one above defines every dependency it needs through its own runtime.
+
 Pass `name` to `createRuntime` to see that name in error messages.
 Every runtime has the same methods, and each has a module-level counterpart that targets the built-in runtime:
 
@@ -647,6 +653,7 @@ Everything shown earlier is that same API applied to the built-in runtime, so an
 ## Diagnostics
 
 During resolution and lifecycle management, Ripple DI reports mistakes with specific errors: `MissingProviderError` for a dependency with no provider, `DependencyCycleError` for a cycle, and `AsyncFactoryError` for a factory that returned a native promise without `asValue`.
+
 Errors thrown by your own factory arrive wrapped in `FactoryError` with the original cause.
 A failed factory is not cached, so the next read tries again.
 

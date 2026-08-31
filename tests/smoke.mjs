@@ -24,11 +24,15 @@ const delay = (milliseconds) =>
 // Shared by the groups that show which databases were built and closed.
 const closedDatabases = []
 const useConfig = defineDependency(() => ({ url: "production" }))
-const useDb = defineDependency(() => ({ url: useConfig().url }), {
-  dispose: (db) => {
-    closedDatabases.push(db.url)
-  },
-})
+const useDb = defineDependency(
+  () => ({
+    url: useConfig().url,
+    [Symbol.dispose]() {
+      closedDatabases.push(this.url)
+    },
+  }),
+  { dispose: true },
+)
 
 function checkAmbientRead() {
   assert.equal(useDb().url, "production")
@@ -62,7 +66,7 @@ async function checkInstallation() {
   const installation = install(provide(useTenant, "acme"))
 
   assert.equal(useTenant(), "acme")
-  await installation.close()
+  await installation[Symbol.asyncDispose]()
   assert.throws(() => useTenant(), MissingProviderError)
 }
 
@@ -103,7 +107,7 @@ async function checkManualScope() {
     scope.run(() => useDb().url),
     "manual",
   )
-  await scope.close()
+  await scope[Symbol.asyncDispose]()
 }
 
 // Every scope above owned the database built from its own configuration.
@@ -158,7 +162,10 @@ async function checkMultipleRuntimes() {
 
   assert.equal(await production.useDb().query(), "rows from production-db")
   assert.equal(await preview.useDb().query(), "rows from preview-db")
-  await Promise.all([production.runtime.dispose(), preview.runtime.dispose()])
+  await Promise.all([
+    production.runtime[Symbol.asyncDispose](),
+    preview.runtime.dispose(),
+  ])
 }
 
 async function checkShutdown() {

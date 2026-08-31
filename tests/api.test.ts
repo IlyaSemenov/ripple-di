@@ -288,6 +288,9 @@ describe("type inference", () => {
     const useCreated = defineDependency(() => ({ close() {} }), {
       dispose: (value) => value.close(),
     })
+    const useDisposable = defineDependency(() => ({ [Symbol.dispose]() {} }), {
+      dispose: true,
+    })
     const useFunction = defineDependency((): (() => string) => () => "value")
     const useAlias = defineDependency(useConfig)
     const namedFactory = (() => ({ close() {} })) as (() => Closeable) & {
@@ -308,6 +311,7 @@ describe("type inference", () => {
     expectTypeOf(useRequired).toEqualTypeOf<Dependency<Closeable>>()
     expectTypeOf(useRequiredWithDisposer).toEqualTypeOf<Dependency<Closeable>>()
     expectTypeOf(useCreated).toEqualTypeOf<Dependency<{ close(): void }>>()
+    expectTypeOf(useDisposable).toEqualTypeOf<Dependency<Disposable>>()
     expectTypeOf(useFunction).toEqualTypeOf<Dependency<() => string>>()
     expectTypeOf(useAlias).toEqualTypeOf<
       Dependency<ReturnType<typeof useConfig>>
@@ -316,6 +320,14 @@ describe("type inference", () => {
     expectTypeOf(useFactoryWithDisposeProperty).toEqualTypeOf<
       Dependency<Closeable>
     >()
+  })
+
+  it("types lifecycle handles as asynchronously disposable", () => {
+    expectTypeOf<Scope>().toMatchTypeOf<AsyncDisposable>()
+    expectTypeOf<Installation>().toMatchTypeOf<AsyncDisposable>()
+    expectTypeOf<
+      ReturnType<typeof createRuntime>
+    >().toMatchTypeOf<AsyncDisposable>()
   })
 
   it("awaits every callback form", async () => {

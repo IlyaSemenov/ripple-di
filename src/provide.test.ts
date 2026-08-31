@@ -9,7 +9,7 @@ it("rejects dispose: true when the dependency has no disposer", async () => {
   const useValue = runtime.defineDependency<object>({ name: "value" })
 
   expect(() => provide(useValue, {}, { dispose: true })).toThrow(
-    'Dependency "value" has no dispose callback to reuse.',
+    'Dependency "value" has no cleanup configuration to reuse.',
   )
   await runtime.dispose()
 })

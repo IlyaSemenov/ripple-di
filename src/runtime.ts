@@ -49,7 +49,7 @@ export interface RuntimeOptions {
  * Close the installation to remove its providers and clean up the scopes and
  * owned values created beneath it.
  */
-export interface Installation {
+export interface Installation extends AsyncDisposable {
   /** Removes these providers and closes everything owned beneath them. */
   close(): Promise<void>
 }
@@ -63,7 +63,7 @@ export interface Installation {
  * Installation and scope management methods cannot be called from one of this
  * runtime's dependency factories or disposers.
  */
-export interface Runtime {
+export interface Runtime extends AsyncDisposable {
   /**
    * Defines a dependency with no built-in value.
    *
@@ -296,6 +296,10 @@ class RuntimeImpl implements RuntimeContext {
     return this.root.close()
   }
 
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.dispose()
+  }
+
   closeInstallation(installation: InstallationImpl): Promise<void> {
     if (this.activeInstallation === installation) {
       this.activeInstallation = undefined
@@ -415,6 +419,10 @@ class InstallationImpl implements Installation {
     this.runtime.assertScopeManagementAllowed("Installation.close")
     this.closePromise ??= this.runtime.closeInstallation(this)
     return this.closePromise
+  }
+
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close()
   }
 }
 

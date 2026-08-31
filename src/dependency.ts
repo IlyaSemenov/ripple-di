@@ -23,11 +23,61 @@ export interface DependencyOptions<T> {
   /**
    * Cleans up values owned by Ripple DI.
    *
+   * Pass `true` to use `Symbol.asyncDispose`, falling back to
+   * `Symbol.dispose`, or pass a callback explicitly.
    * This applies to the built-in factory, `provideFactory`, and values passed
    * through `provide` with `dispose: true`.
    * Plain values passed through `provide` remain borrowed.
    */
-  readonly dispose?: Disposer<T>
+  readonly dispose?: Disposer<T> | true
+}
+
+/** Captures the cleanup operation when a value gains an owner. */
+export function cleanupOf<T>(
+  dependencyName: string,
+  value: T,
+  dispose: Disposer<T> | true,
+): () => void | Promise<void> {
+  if (dispose !== true) {
+    return () => dispose(value)
+  }
+  // Explicit resource management treats nullish resources as a no-op.
+  if (value === null || value === undefined) {
+    return () => {}
+  }
+
+  const resource = value as Record<PropertyKey, unknown>
+  // Match `await using`: prefer async cleanup and fall back only when absent.
+  // Reading the method now keeps later mutation from changing the finalizer.
+  const asyncDispose = resource[Symbol.asyncDispose]
+  if (asyncDispose !== null && asyncDispose !== undefined) {
+    if (typeof asyncDispose !== "function") {
+      throw new TypeError(
+        `Dependency "${dependencyName}" received an owned value whose ` +
+          "Symbol.asyncDispose property is not a function.",
+      )
+    }
+    return () => Promise.resolve(asyncDispose.call(value))
+  }
+
+  const syncDispose = resource[Symbol.dispose]
+  if (syncDispose !== null && syncDispose !== undefined) {
+    if (typeof syncDispose !== "function") {
+      throw new TypeError(
+        `Dependency "${dependencyName}" received an owned value whose ` +
+          "Symbol.dispose property is not a function.",
+      )
+    }
+    return () => {
+      // A synchronous disposer's return value is intentionally ignored.
+      syncDispose.call(value)
+    }
+  }
+
+  throw new TypeError(
+    `Dependency "${dependencyName}" configured dispose: true, but its ` +
+      "owned value implements neither Symbol.asyncDispose nor Symbol.dispose.",
+  )
 }
 
 let nextDependencyId = 1
