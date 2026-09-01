@@ -1,5 +1,11 @@
 # ripple-di
 
+## 2.2.0
+
+### Minor Changes
+
+- 0f67797: Add dependency-aware memoization for object getters, zero-argument methods, and standalone computations.
+
 ## 2.1.0
 
 ### Minor Changes
