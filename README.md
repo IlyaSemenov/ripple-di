@@ -676,9 +676,7 @@ Returning to an earlier dependency context after an incompatible override theref
 `memoize` provides the same behavior without decorator syntax.
 
 ```ts
-const currentFormatter = memoize(() =>
-  createFormatter(useLocale()),
-)
+const currentFormatter = memoize(() => createFormatter(useLocale()))
 ```
 
 Memo computations are synchronous, do not accept arguments, and do not cache thrown errors or native `Promise` results.
