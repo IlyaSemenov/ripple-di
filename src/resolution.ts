@@ -12,9 +12,9 @@ import {
   RippleError,
   ScopeClosedError,
 } from "./errors"
-import type { EvaluationFrame } from "./evaluation"
+import type { EvaluationFrame, TrackingFrame } from "./evaluation"
 import {
-  currentEvaluation,
+  currentTracking,
   cycleStart,
   framesFrom,
   popEvaluation,
@@ -25,6 +25,7 @@ import type {
   BindingStamp,
   BoundProvider,
   Cell,
+  DependencyIdentityRecord,
   DependencyNode,
   DependencyStamp,
   ResolutionRef,
@@ -46,11 +47,11 @@ export function resolveTracked<T>(
   scope: ScopeContext,
   node: DependencyNode<T>,
 ): T {
-  const consumerFrame = currentEvaluation()
+  const consumerFrame = currentTracking()
 
   try {
     assertCompatible(scope, node)
-    if (consumerFrame && consumerFrame.runtime !== scope.runtime) {
+    if (consumerFrame?.runtime && consumerFrame.runtime !== scope.runtime) {
       throw new CrossRuntimeDependencyError(
         node.name,
         node.runtime.name,
@@ -58,12 +59,16 @@ export function resolveTracked<T>(
       )
     }
     assertPubliclyReadable(scope, node.name)
-    if (consumerFrame && consumerFrame.scope !== scope) {
+    if (consumerFrame?.scope && consumerFrame.scope !== scope) {
       throw new CrossScopeResolutionError(
         node.name,
         consumerFrame.scope.name,
         scope.name,
       )
+    }
+    if (consumerFrame) {
+      consumerFrame.runtime = scope.runtime
+      consumerFrame.scope = scope
     }
 
     const resolved = resolveUntracked(scope, node)
@@ -209,6 +214,8 @@ function materialize<T>(
   }
 
   const frame: EvaluationFrame = {
+    kind: "factory",
+    name: node.name,
     runtime: requestedScope.runtime,
     scope: requestedScope,
     node: asUnknownNode(node),
@@ -280,7 +287,7 @@ function materialize<T>(
 }
 
 function recordDependency<T>(
-  frame: EvaluationFrame,
+  frame: TrackingFrame,
   node: DependencyNode<T>,
   stamp: DependencyStamp<T>,
 ): void {
@@ -289,10 +296,99 @@ function recordDependency<T>(
   if (previous && previous.identity !== stamp.identity) {
     throw new ResolutionInvariantError(
       `Dependency "${node.name}" changed identity while evaluating ` +
-        `"${frame.node.name}".`,
+        `"${frame.name}".`,
     )
   }
   frame.dependencies.set(unknownNode, stamp as DependencyStamp)
+}
+
+/** Reuses and propagates a previously tracked dependency set when it matches. */
+export function reuseTrackedDependencies(
+  dependencies: readonly DependencyIdentityRecord[],
+): boolean {
+  const first = dependencies[0]
+  if (!first) {
+    return true
+  }
+
+  const firstNode = nodeOf(first.dependency)
+  const consumerFrame = currentTracking()
+  if (consumerFrame?.runtime && consumerFrame.runtime !== firstNode.runtime) {
+    return false
+  }
+  const scope = consumerFrame?.scope ?? firstNode.runtime.currentAmbientScope()
+
+  const resolvedDependencies: Array<{
+    node: DependencyNode<unknown>
+    stamp: DependencyStamp
+  }> = []
+  try {
+    for (const record of dependencies) {
+      const node = nodeOf(record.dependency)
+      assertCompatible(scope, node)
+      assertPubliclyReadable(scope, node.name)
+      const actual = resolveUntracked(scope, node)
+      if (actual.stamp.identity !== record.identity) {
+        return false
+      }
+      resolvedDependencies.push({ node, stamp: actual.stamp })
+    }
+  } catch {
+    return false
+  }
+
+  if (consumerFrame) {
+    consumerFrame.runtime = scope.runtime
+    consumerFrame.scope = scope
+    for (const dependency of resolvedDependencies) {
+      recordDependency(consumerFrame, dependency.node, dependency.stamp)
+    }
+  }
+  return true
+}
+
+/** Propagates a completed nested computation into its consumer frame. */
+export function propagateTrackedDependencies(
+  source: TrackingFrame,
+  consumer: TrackingFrame | undefined,
+): void {
+  if (!consumer) {
+    return
+  }
+  if (source.hasFailedDependencyRead) {
+    consumer.hasFailedDependencyRead = true
+  }
+  if (!source.runtime || !source.scope) {
+    return
+  }
+  if (consumer.runtime && consumer.runtime !== source.runtime) {
+    const dependency = source.dependencies.keys().next().value
+    if (dependency) {
+      throw new CrossRuntimeDependencyError(
+        dependency.name,
+        dependency.runtime.name,
+        consumer.runtime.name,
+      )
+    }
+    return
+  }
+  if (consumer.scope && consumer.scope !== source.scope) {
+    const dependency = source.dependencies.keys().next().value
+    if (dependency) {
+      throw new CrossScopeResolutionError(
+        dependency.name,
+        consumer.scope.name,
+        source.scope.name,
+      )
+    }
+    return
+  }
+
+  consumer.runtime = source.runtime
+  consumer.scope = source.scope
+  for (const [node, stamp] of source.dependencies) {
+    recordDependency(consumer, node, stamp)
+  }
 }
 
 function assertCompatible<T>(

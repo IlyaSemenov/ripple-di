@@ -18,7 +18,11 @@ import {
   InstallationConflictError,
   ScopeClosedError,
 } from "./errors"
-import { assertOutsideEvaluation, currentEvaluation } from "./evaluation"
+import {
+  assertOutsideTracking,
+  currentEvaluation,
+  currentTracking,
+} from "./evaluation"
 import type {
   BoundProvider,
   DependencyNode,
@@ -361,7 +365,7 @@ class RuntimeImpl implements RuntimeContext {
   }
 
   assertScopeManagementAllowed(operation: string): void {
-    assertOutsideEvaluation(this, operation)
+    assertOutsideTracking(this, operation)
     const owner = this.teardown.getStore()
     if (owner) {
       throw new DisposerContextError(operation, owner.name, owner.id)
@@ -373,9 +377,9 @@ class RuntimeImpl implements RuntimeContext {
   }
 
   readCallable<T>(node: DependencyNode<T>): T {
-    const frame = currentEvaluation()
+    const frame = currentTracking()
     if (frame) {
-      if (frame.runtime !== this) {
+      if (frame.runtime && frame.runtime !== this) {
         frame.hasFailedDependencyRead = true
         throw new CrossRuntimeDependencyError(
           node.name,
@@ -383,7 +387,10 @@ class RuntimeImpl implements RuntimeContext {
           frame.runtime.name,
         )
       }
-      return resolveTracked(frame.scope, node)
+      return resolveTracked(
+        frame.scope ?? this.ambient.getStore() ?? this.baseScope(),
+        node,
+      )
     }
 
     return resolveTracked(this.ambient.getStore() ?? this.baseScope(), node)

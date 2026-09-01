@@ -7,6 +7,7 @@ export type {
   FactoryDependencyOptions,
 } from "./dependency"
 export * from "./errors"
+export { memo, memoize } from "./memo"
 export type {
   OverrideRunner,
   ProvisionFactory,

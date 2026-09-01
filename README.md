@@ -5,7 +5,7 @@
 Override a dependency for one request, test, or job.
 Ripple DI automatically gives everything that uses it the right scoped version, reuses everything else, and cleans up temporary resources when the work is done.
 
-No decorators, reflection metadata, string tokens, or container object in application code.
+No required decorators, reflection metadata, string tokens, or container object in application code.
 
 ## Example
 
@@ -67,9 +67,10 @@ The package is published as ESM.
 | Define an overrideable factory                | `defineFactoryDependency`
 | Supply the application's values at startup    | `install` with `provide` or `provideFactory`
 | Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
+| Memoize a getter or zero-argument computation | `memo` or `memoize`
+| Keep one scope open across several operations | `createScope`
 | Continue every current override layer         | `withDetachedContext`
 | Run detached with selected overrides          | `withDetachedOverrides`
-| Keep one scope open across several operations | `createScope`
 | Shut everything down                          | `dispose`
 
 `createValueOverride` and `createOverrideRunner` in [Advanced usage](#advanced-usage) turn overrides you write repeatedly into reusable helpers.
@@ -649,6 +650,42 @@ A call through `tenantOverrides` applies both layers, and the added layer wins w
 
 Use `createScope` instead when several operations share one set of values that stay alive until you close the scope.
 A runner never keeps a scope open between calls: it is for repeated independent calls, not for one long-lived scope.
+
+### Memoize an object computation
+
+Use `memo` when a getter or zero-argument method reads Ripple dependencies and its object can outlive the scope where it is accessed.
+
+```ts
+import { memo } from "ripple-di"
+
+class ViewModel {
+  @memo
+  get formatter() {
+    return createFormatter(useLocale())
+  }
+}
+```
+
+The object determines where the value is stored, without keeping that object alive.
+The Ripple dependencies read by the getter determine whether the value is valid in the current scope: changing `useLocale` rebuilds it, while unrelated overrides do not.
+Nested memos propagate their dependency reads, so changing a dependency of an inner memo also invalidates its outer consumers.
+
+Each object and member keeps only its latest value.
+Returning to an earlier dependency context after an incompatible override therefore computes the value again.
+
+`memoize` provides the same behavior without decorator syntax.
+
+```ts
+const currentFormatter = memoize(() =>
+  createFormatter(useLocale()),
+)
+```
+
+Memo computations are synchronous, do not accept arguments, and do not cache thrown errors or native `Promise` results.
+Ripple DI does not own or dispose their results.
+
+Only Ripple dependencies are tracked.
+Ordinary mutable fields do not invalidate a memo, so this API is not a reactive object system.
 
 ### Multiple runtimes
 

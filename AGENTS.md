@@ -32,7 +32,8 @@ Read [README.md](README.md) completely before changing the public API, resolutio
 - `provide.ts` defines typed provisions and owns their private metadata.
 - `value.ts` defines the public `asValue` marker for factory results and owns its private metadata.
 - `graph.ts` defines the internal provider, stamp, `Cell`, and context model.
-- `evaluation.ts` owns the module-local synchronous factory stack shared by the copy's runtime instances.
+- `evaluation.ts` owns module-local synchronous tracking for dependency factories and memo computations, plus factory cycle paths.
+- `memo.ts` owns dependency-aware memo storage, the zero-argument primitive, and its decorator.
 - `resolution.ts` implements provider lookup, tracking, validation, promotion, and cycle detection.
 - `runtime.ts` defines the `Runtime` and `Installation` contracts and owns runtime creation, dependency definitions, callable routing, root installation, and the module-level API.
 - `scope.ts` defines the `Scope` contract and owns provision validation and binding, async context, and lifecycle boundaries.
@@ -51,7 +52,7 @@ Runtime state, built-in bindings, cells, and lifecycle are never shared between 
 
 Scopes have immutable provider bindings and mutable caches and lifecycle state.
 Direct values resolve through `BindingStamp` identity without creating cells.
-Factory-created values resolve through `CellStamp` identity and record only direct callable dependency reads.
+Factory-created values resolve through `CellStamp` identity and record effective dependencies from callable reads and nested memo computations.
 Factory-created values are reused whenever their provider and recorded dependency stamps still match.
 
 - Model scope-local values through explicit dependency bindings; do not add a separate per-scope sharing mode.
@@ -61,10 +62,10 @@ Factory-created values are reused whenever their provider and recorded dependenc
   Track the detached installation until close settles so a replacement attempt reports pending cleanup separately from unrelated live scopes.
 - Keep scope ancestry out of the public `Scope` contract so typed scope handles cannot expose an installation or the runtime root.
   Treat concrete `ScopeImpl` properties as internal implementation state, not as a hardened JavaScript capability boundary.
-- The module-local synchronous evaluation stack is shared by every runtime created by one package copy.
+- The module-local synchronous tracking and factory evaluation stacks are shared by every runtime created by one package copy.
 - Do not add process-wide state, `globalThis` writes, `Symbol.for` registry keys, or cross-copy protocols.
   Callable reads across separately loaded copies are outside supported graph composition and intentionally remain undetected.
-- Callable dispatch order is factory frame, the owning runtime's `AsyncLocalStorage`, then its active installation or root scope.
+- Callable dispatch order is tracking frame, the owning runtime's `AsyncLocalStorage`, then its active installation or root scope.
 - `Runtime` convenience methods use the same current scope selection, except detached APIs, which create temporary children of the runtime's active installation or root and remain part of that base scope's lifecycle.
 - Keep every `Runtime` method available as a module-level function that delegates to the built-in global runtime.
 - Select dependency diagnostic names in this order: explicit `options.name`, non-empty `factory.name`, then `dependency#N` with the definition site captured at `defineDependency`.
@@ -111,6 +112,9 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - Name the type parameter of a callback-based API `TCallbackResult` and infer it from the callback's own return type, whether or not the API awaits it.
   Declare an awaited result as `Promise<Awaited<TCallbackResult>>` instead of declaring the callback as returning `TCallbackResult | Promise<TCallbackResult>`, and do not export an alias for that form.
 - Do not add live mutation, signal effects, async resolution, previous-binding decorators, or cross-scope factory reads to the core API.
+- Memo computations are synchronous, cache only successful reads, track only Ripple dependencies, and never own their results.
+  Keep one latest cell per object and member, store dependency identities without retaining their scopes, and reject arguments and recursion.
+  Reject scope management before a memo binds to a runtime and in its bound runtime afterward.
 
 ## Documentation
 

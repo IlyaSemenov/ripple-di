@@ -111,6 +111,14 @@ export class DependencyCycleError extends RippleError {
   }
 }
 
+/** Memoized computations called one another in a cycle. */
+export class MemoCycleError extends RippleError {
+  constructor(readonly path: readonly string[]) {
+    super(`Memo cycle: ${path.join(" \u2192 ")}.`)
+    this.name = "MemoCycleError"
+  }
+}
+
 /** A dependency factory returned a `Promise` instead of the value. */
 export class AsyncFactoryError extends RippleError {
   constructor(
@@ -124,6 +132,18 @@ export class AsyncFactoryError extends RippleError {
         "result in asValue() when the promise itself is the value.",
     )
     this.name = "AsyncFactoryError"
+  }
+}
+
+/** A dependency-aware memo computation returned a `Promise`. */
+export class AsyncMemoError extends RippleError {
+  constructor(readonly computationName: string) {
+    super(
+      `Memo computation "${computationName}" returned a Promise. Memo ` +
+        "computations are synchronous because dependency reads made after an " +
+        "await are not tracked.",
+    )
+    this.name = "AsyncMemoError"
   }
 }
 
@@ -184,6 +204,17 @@ export class FactoryScopeOperationError extends RippleError {
       `Factory for dependency "${dependencyName}" cannot call ${operation}.`,
     )
     this.name = "FactoryScopeOperationError"
+  }
+}
+
+/** A memo computation tried to manage runtime context or lifecycle. */
+export class MemoScopeOperationError extends RippleError {
+  constructor(
+    readonly computationName: string,
+    readonly operation: string,
+  ) {
+    super(`Memo computation "${computationName}" cannot call ${operation}.`)
+    this.name = "MemoScopeOperationError"
   }
 }
 

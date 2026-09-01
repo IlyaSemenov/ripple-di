@@ -14,6 +14,8 @@ import {
   type Installation,
   install,
   MissingProviderError,
+  memo,
+  memoize,
   type OverrideRunner,
   OwnedProvisionReuseError,
   provide,
@@ -77,6 +79,35 @@ describe("consumer site", () => {
     expect("reset" in useDb).toBe(false)
     expect("setFactory" in useDb).toBe(false)
     expect("provide" in useDb).toBe(false)
+  })
+})
+
+describe("dependency-aware memo types", () => {
+  it("preserves getter, method, receiver, and result types", () => {
+    class Example {
+      @memo
+      get label(): string {
+        return "label"
+      }
+
+      @memo
+      count(): number {
+        return 1
+      }
+    }
+
+    const tracked = memoize(function (this: Example): string {
+      return this.label
+    })
+    const standalone = memoize(() => 42)
+    const example = new Example()
+
+    expectTypeOf(example.label).toEqualTypeOf<string>()
+    expectTypeOf(example.count).toEqualTypeOf<() => number>()
+    expectTypeOf(tracked).toEqualTypeOf<(this: Example) => string>()
+    expectTypeOf(standalone).toEqualTypeOf<() => number>()
+    expect(tracked.call(example)).toBe("label")
+    expect(standalone()).toBe(42)
   })
 })
 
@@ -574,5 +605,23 @@ describe("invalid consumer syntax", () => {
     createValueOverride(useConfig, { dispose: (value: string) => value.length })
     // @ts-expect-error Factory dependency options do not own invocation results.
     defineFactoryDependency(() => "value", { dispose: () => {} })
+    // @ts-expect-error Dependency-aware memos do not accept arguments.
+    memoize((_value: string) => "value")
+
+    class InvalidMemoMethods {
+      // @ts-expect-error A memoized method cannot have required arguments.
+      @memo
+      required(_value: string) {}
+
+      // @ts-expect-error A memoized method cannot have optional arguments.
+      @memo
+      optional(_value?: string) {}
+
+      // @ts-expect-error A memoized method cannot have rest arguments.
+      @memo
+      rest(..._values: string[]) {}
+    }
+
+    void InvalidMemoMethods
   })
 })

@@ -78,10 +78,16 @@ export interface ResolutionRef<T> {
   readonly stamp: DependencyStamp<T>
 }
 
-/** One actual direct callable read recorded during factory evaluation. */
+/** One effective dependency identity retained by a factory cell. */
 export interface DependencyRecord {
   readonly dependency: DependencyToken<unknown>
   readonly stamp: DependencyStamp
+}
+
+/** Tracked identity retained without keeping its originating scope alive. */
+export interface DependencyIdentityRecord {
+  readonly dependency: DependencyToken<unknown>
+  readonly identity: symbol
 }
 
 /**
