@@ -67,7 +67,7 @@ The package is published as ESM.
 | Define an overrideable factory                | `defineFactoryDependency`
 | Supply the application's values at startup    | `install` with `provide` or `provideFactory`
 | Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
-| Memoize a getter or zero-argument computation | `memo` or `memoize`
+| Memoize a getter or zero-argument method      | `@memo`
 | Keep one scope open across several operations | `createScope`
 | Continue every current override layer         | `withDetachedContext`
 | Run detached with selected overrides          | `withDetachedOverrides`
@@ -651,7 +651,7 @@ A call through `tenantOverrides` applies both layers, and the added layer wins w
 Use `createScope` instead when several operations share one set of values that stay alive until you close the scope.
 A runner never keeps a scope open between calls: it is for repeated independent calls, not for one long-lived scope.
 
-### Memoize an object computation
+### Memoize an object member
 
 Use `memo` when a getter or zero-argument method reads Ripple dependencies and its object can outlive the scope where it is accessed.
 
