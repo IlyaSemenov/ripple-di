@@ -1,5 +1,11 @@
 # ripple-di
 
+## 2.3.1
+
+### Patch Changes
+
+- 6491307: Allow `install` to accept the same individual, listed, and conditional provision inputs as `collectProvisions` without an intermediate collection.
+
 ## 2.3.0
 
 ### Minor Changes
