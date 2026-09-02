@@ -14,7 +14,7 @@ export type {
   ValueOverride,
 } from "./overrides"
 export type { ProvideOptions, Provision, ProvisionInput } from "./provide"
-export { provide, provideFactory } from "./provide"
+export { collectProvisions, provide, provideFactory } from "./provide"
 export * from "./runtime"
 export type { Scope, ScopeState } from "./scope"
 export type { AsValue, FactoryResult } from "./value"

@@ -66,6 +66,7 @@ The package is published as ESM.
 | Define an input, derived value, or service    | `defineDependency`
 | Define an overrideable factory                | `defineFactoryDependency`
 | Supply the application's values at startup    | `install` with `provide` or `provideFactory`
+| Collect provisions from several modules       | `collectProvisions`
 | Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
 | Memoize a getter or zero-argument method      | `@memo`
 | Keep one scope open across several operations | `createScope`
@@ -297,15 +298,18 @@ export function getPlatformProvisions() {
 
 ```ts
 // startup.ts
-import { dispose, install } from "ripple-di"
+import { collectProvisions, dispose, install } from "ripple-di"
 
-install([
-  ...getCoreProvisions(),
-  ...getPlatformProvisions(),
-])
+install(collectProvisions(
+  getCoreProvisions(),
+  platformEnabled && getPlatformProvisions(),
+))
 
 onShutdown(() => dispose())
 ```
+
+`collectProvisions` accepts individual provisions and provision lists, flattens each list one level, and omits `false`, `null`, and `undefined` inputs.
+This keeps conditional module wiring explicit without temporary arrays or repeated spread syntax.
 
 - Export a function that builds the provisions rather than a ready-made array, so each installation gets provisions of its own.
   A provision that hands over ownership belongs to a single installation and cannot be reused by the next one.

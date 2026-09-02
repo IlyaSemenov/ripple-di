@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test"
 
-import { provide } from "./provide"
+import { collectProvisions, provide } from "./provide"
 import { createRuntime } from "./runtime"
 import { asValue } from "./value"
 
@@ -22,5 +22,19 @@ it("rejects an asValue marker passed as a plain value", async () => {
     // @ts-expect-error A marker is not a value.
     provide(useToken, asValue(Promise.resolve("value"))),
   ).toThrow(TypeError)
+  await runtime.dispose()
+})
+
+it("collects provisions and omits false and nullish inputs", async () => {
+  const runtime = createRuntime()
+  const useConfig = runtime.defineDependency<string>({ name: "config" })
+  const useClock = runtime.defineDependency<number>({ name: "clock" })
+  const config = provide(useConfig, "test")
+  const clock = provide(useClock, 42)
+
+  expect(collectProvisions(config, false, null, [clock], undefined)).toEqual([
+    config,
+    clock,
+  ])
   await runtime.dispose()
 })

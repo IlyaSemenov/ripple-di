@@ -2,6 +2,7 @@ import { afterAll, describe, expect, expectTypeOf, it } from "bun:test"
 
 import {
   asValue,
+  collectProvisions,
   createOverrideRunner,
   createRuntime,
   createScope,
@@ -18,6 +19,7 @@ import {
   memoize,
   type OverrideRunner,
   OwnedProvisionReuseError,
+  type Provision,
   provide,
   provideFactory,
   resolve,
@@ -259,6 +261,17 @@ describe("module-level API", () => {
 })
 
 describe("provision input", () => {
+  it("collects individual, listed, and conditional provisions", () => {
+    const useValue = defineDependency<string>({ name: "collected-value" })
+    const value = provide(useValue, "value")
+    const collected = collectProvisions(value, [value], false, null, undefined)
+
+    expectTypeOf(collected).toEqualTypeOf<readonly Provision[]>()
+    expect(collected).toEqual([value, value])
+    // @ts-expect-error Other falsy values are invalid provision inputs.
+    collectProvisions(0)
+  })
+
   it("takes one provision without an array wherever provisions are supplied", async () => {
     const useValue = defineDependency<string>({ name: "single-value" })
     const useLayer = defineDependency<string>({ name: "single-layer" })

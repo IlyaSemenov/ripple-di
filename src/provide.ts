@@ -69,6 +69,23 @@ export function provisionListOf(input: ProvisionInput): readonly Provision[] {
 }
 
 /**
+ * Collects individual provisions and provision lists into one flat list.
+ *
+ * False and nullish inputs are omitted so provisions can be included
+ * conditionally without temporary arrays.
+ */
+export function collectProvisions(
+  ...inputs: readonly (ProvisionInput | false | null | undefined)[]
+): readonly Provision[] {
+  return inputs.flatMap((input) => {
+    if (input === false || input === null || input === undefined) {
+      return []
+    }
+    return provisionListOf(input)
+  })
+}
+
+/**
  * Transfers each owned-value provision to one owner after list validation.
  *
  * Checking the complete list before recording claims keeps failed scope
