@@ -1,5 +1,11 @@
 # ripple-di
 
+## 2.3.0
+
+### Minor Changes
+
+- 71effe1: Add `collectProvisions` for combining individual, listed, and conditional provisions into one installation input.
+
 ## 2.2.0
 
 ### Minor Changes
