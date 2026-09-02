@@ -13,7 +13,11 @@ export type {
   ProvisionFactory,
   ValueOverride,
 } from "./overrides"
-export type { ProvideOptions, Provision, ProvisionInput } from "./provide"
+export type {
+  ProvideOptions,
+  Provision,
+  ProvisionInput,
+} from "./provide"
 export { collectProvisions, provide, provideFactory } from "./provide"
 export * from "./runtime"
 export type { Scope, ScopeState } from "./scope"

@@ -36,7 +36,12 @@ import {
   type ProvisionFactory,
   type ValueOverride,
 } from "./overrides"
-import type { ProvideOptions, ProvisionInput } from "./provide"
+import {
+  collectProvisions,
+  type ProvideOptions,
+  type ProvisionCollectionInput,
+  type ProvisionInput,
+} from "./provide"
 import { resolveTracked } from "./resolution"
 import {
   type Scope,
@@ -109,7 +114,7 @@ export interface Runtime extends AsyncDisposable {
    * A runtime can have one active installation, and previously created scopes
    * must be fully closed before this method is called.
    */
-  install(provisions: ProvisionInput): Installation
+  install(...provisions: ProvisionCollectionInput[]): Installation
 
   /** Returns a dependency value from the current scope. */
   resolve<T>(dependency: DependencyToken<T>): T
@@ -253,7 +258,7 @@ class RuntimeImpl implements RuntimeContext {
     })
   }
 
-  install(provisions: ProvisionInput): Installation {
+  install(...provisions: ProvisionCollectionInput[]): Installation {
     this.assertScopeManagementAllowed("Runtime.install")
     if (this.root.state !== "active") {
       throw new ScopeClosedError(
@@ -279,7 +284,7 @@ class RuntimeImpl implements RuntimeContext {
 
     const installation = new InstallationImpl(
       this,
-      this.root.createScope(provisions),
+      this.root.createScope(collectProvisions(...provisions)),
     )
     this.activeInstallation = installation
     return installation
@@ -538,8 +543,10 @@ export function defineFactoryDependency<TFactory extends AnyFactory>(
  * Scoped overrides still take priority. Close the returned installation to
  * remove its providers and clean up everything created from them.
  */
-export function install(provisions: ProvisionInput): Installation {
-  return globalRuntime.install(provisions)
+export function install(
+  ...provisions: ProvisionCollectionInput[]
+): Installation {
+  return globalRuntime.install(...provisions)
 }
 
 /** Returns a dependency value from the current scope. */

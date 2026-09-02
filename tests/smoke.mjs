@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import {
   AsyncFactoryError,
   asValue,
+  collectProvisions,
   createOverrideRunner,
   createRuntime,
   createScope,
@@ -78,9 +79,20 @@ async function checkFactoryDependency() {
 // A single provision needs no array, in every API that takes provisions.
 async function checkInstallation() {
   const useTenant = defineDependency()
-  const installation = install(provide(useTenant, "acme"))
+  const useFeature = defineDependency()
+  const featureProvisions = collectProvisions(
+    false,
+    [provide(useFeature, "enabled")],
+    undefined,
+  )
+  const installation = install(
+    provide(useTenant, "acme"),
+    null,
+    featureProvisions,
+  )
 
   assert.equal(useTenant(), "acme")
+  assert.equal(useFeature(), "enabled")
   await installation[Symbol.asyncDispose]()
   assert.throws(() => useTenant(), MissingProviderError)
 }

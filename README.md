@@ -298,18 +298,20 @@ export function getPlatformProvisions() {
 
 ```ts
 // startup.ts
-import { collectProvisions, dispose, install } from "ripple-di"
+import { dispose, install } from "ripple-di"
 
-install(collectProvisions(
+install(
   getCoreProvisions(),
   platformEnabled && getPlatformProvisions(),
-))
+)
 
 onShutdown(() => dispose())
 ```
 
-`collectProvisions` accepts individual provisions and provision lists, flattens each list one level, and omits `false`, `null`, and `undefined` inputs.
+`install` accepts individual provisions and provision lists, flattens each list one level, and omits `false`, `null`, and `undefined` arguments.
 This keeps conditional module wiring explicit without temporary arrays or repeated spread syntax.
+
+Use `collectProvisions` with the same arguments when provisions need to be combined and passed or returned before installation.
 
 - Export a function that builds the provisions rather than a ready-made array, so each installation gets provisions of its own.
   A provision that hands over ownership belongs to a single installation and cannot be reused by the next one.

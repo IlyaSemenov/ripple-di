@@ -272,6 +272,21 @@ describe("provision input", () => {
     collectProvisions(0)
   })
 
+  it("installs several listed and conditional provision inputs", async () => {
+    const useHost = defineDependency<string>({ name: "host" })
+    const usePort = defineDependency<number>({ name: "port" })
+    const installation = install(
+      provide(useHost, "localhost"),
+      false,
+      [provide(usePort, 3000)],
+      null,
+      undefined,
+    )
+
+    expect(`${useHost()}:${usePort()}`).toBe("localhost:3000")
+    await installation.close()
+  })
+
   it("takes one provision without an array wherever provisions are supplied", async () => {
     const useValue = defineDependency<string>({ name: "single-value" })
     const useLayer = defineDependency<string>({ name: "single-layer" })

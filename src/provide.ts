@@ -18,6 +18,9 @@ export interface Provision {
 /** One provision or a list accepted by scopes, installations, and overrides. */
 export type ProvisionInput = Provision | readonly Provision[]
 
+/** One provision input or an absent conditional branch being collected. */
+export type ProvisionCollectionInput = ProvisionInput | false | null | undefined
+
 /** Ownership options for an existing value supplied with `provide`. */
 export interface ProvideOptions<T> {
   /**
@@ -75,7 +78,7 @@ export function provisionListOf(input: ProvisionInput): readonly Provision[] {
  * conditionally without temporary arrays.
  */
 export function collectProvisions(
-  ...inputs: readonly (ProvisionInput | false | null | undefined)[]
+  ...inputs: readonly ProvisionCollectionInput[]
 ): readonly Provision[] {
   return inputs.flatMap((input) => {
     if (input === false || input === null || input === undefined) {
