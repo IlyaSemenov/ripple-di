@@ -404,6 +404,18 @@ Everything below is optional.
 
 Use `defineFactoryDependency` when the dependency value is itself a factory that application code calls with runtime arguments.
 
+Call `defineFactoryDependency<TFactory>()` without a factory when it must come from the application, request, or task boundary.
+
+```ts
+type SendEmail = (message: EmailMessage) => Promise<void>
+
+const sendEmail = defineFactoryDependency<SendEmail>()
+```
+
+Calling it without a provider throws `MissingProviderError`.
+
+Pass a factory when the dependency has a built-in value.
+
 ```ts
 import { defineFactoryDependency } from "ripple-di"
 

@@ -12,6 +12,21 @@ import {
 } from "ripple-di"
 
 describe("runtime instances", () => {
+  it("defines a factory slot without a built-in implementation", async () => {
+    const runtime = createRuntime()
+    const Format = runtime.defineFactoryDependency<(value: number) => string>()
+
+    expect(() => Format(2)).toThrow(MissingProviderError)
+
+    const scope = runtime.createScope(
+      provide(Format, (value) => `value:${value}`),
+    )
+    expect(scope.run(() => Format(2))).toBe("value:2")
+
+    await scope.close()
+    await runtime.dispose()
+  })
+
   it("keeps dependency definitions and values isolated", async () => {
     const production = createRuntime({ name: "production" })
     const tests = createRuntime({ name: "tests" })

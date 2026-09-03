@@ -114,6 +114,23 @@ describe("dependency-aware memo types", () => {
 })
 
 describe("factory dependency", () => {
+  it("defines a factory slot without a built-in implementation", async () => {
+    type LoadContext = (bucket: string) => Promise<{ bucket: string }>
+    const LoadContext = defineFactoryDependency<LoadContext>()
+
+    expectTypeOf(LoadContext).toEqualTypeOf<FactoryDependency<LoadContext>>()
+    expect(() => LoadContext("assets")).toThrow(MissingProviderError)
+
+    await withOverrides(
+      provide(LoadContext, async (bucket) => ({ bucket })),
+      async () => {
+        await expect(LoadContext("assets")).resolves.toEqual({
+          bucket: "assets",
+        })
+      },
+    )
+  })
+
   it("resolves the current factory and preserves its receiver", async () => {
     const defaultFactory = function (this: { prefix: string }, value: number) {
       return `${this.prefix}:${value}`

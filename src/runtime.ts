@@ -98,6 +98,15 @@ export interface Runtime extends AsyncDisposable {
   ): Dependency<T>
 
   /**
+   * Defines an overrideable factory with no built-in implementation.
+   *
+   * Supply it through an installation or scope before calling it.
+   */
+  defineFactoryDependency<TFactory extends AnyFactory>(
+    options?: FactoryDependencyOptions,
+  ): FactoryDependency<TFactory>
+
+  /**
    * Defines an overrideable factory invoked with ordinary runtime arguments.
    *
    * Each call resolves the current factory and invokes it without caching or
@@ -234,26 +243,37 @@ class RuntimeImpl implements RuntimeContext {
   }
 
   defineFactoryDependency<TFactory extends AnyFactory>(
+    options?: FactoryDependencyOptions,
+  ): FactoryDependency<TFactory>
+  defineFactoryDependency<TFactory extends AnyFactory>(
     factory: TFactory,
-    options: FactoryDependencyOptions = {},
+    options?: FactoryDependencyOptions,
+  ): FactoryDependency<TFactory>
+  defineFactoryDependency<TFactory extends AnyFactory>(
+    factoryOrOptions?: TFactory | FactoryDependencyOptions,
+    maybeOptions?: FactoryDependencyOptions,
   ): FactoryDependency<TFactory> {
     return this.defineFactoryDependencyAt(
-      factory,
-      options,
+      factoryOrOptions,
+      maybeOptions,
       captureDefinitionSite(this.defineFactoryDependency),
     )
   }
 
   defineFactoryDependencyAt<TFactory extends AnyFactory>(
-    factory: TFactory,
-    options: FactoryDependencyOptions,
+    factoryOrOptions: TFactory | FactoryDependencyOptions | undefined,
+    maybeOptions: FactoryDependencyOptions | undefined,
     definitionSite: string | undefined,
   ): FactoryDependency<TFactory> {
-    return createFactoryDependency({
-      name: options.name ?? (factory.name || undefined),
+    const isFactory = typeof factoryOrOptions === "function"
+    const factory = isFactory ? (factoryOrOptions as TFactory) : undefined
+    const options = (isFactory ? maybeOptions : factoryOrOptions) ?? {}
+
+    return createFactoryDependency<TFactory>({
+      name: options.name ?? (factory?.name || undefined),
       definitionSite,
       runtime: this,
-      defaultFactory: () => factory,
+      defaultFactory: factory ? () => factory : undefined,
       dispose: undefined,
     })
   }
@@ -521,6 +541,14 @@ export function defineDependency<T>(
 }
 
 /**
+ * Defines an overrideable factory with no built-in implementation.
+ *
+ * Supply it through an installation or scope before calling it.
+ */
+export function defineFactoryDependency<TFactory extends AnyFactory>(
+  options?: FactoryDependencyOptions,
+): FactoryDependency<TFactory>
+/**
  * Defines an overrideable factory invoked with ordinary runtime arguments.
  *
  * Each call resolves the current factory and invokes it without caching or
@@ -528,11 +556,15 @@ export function defineDependency<T>(
  */
 export function defineFactoryDependency<TFactory extends AnyFactory>(
   factory: TFactory,
-  options: FactoryDependencyOptions = {},
+  options?: FactoryDependencyOptions,
+): FactoryDependency<TFactory>
+export function defineFactoryDependency<TFactory extends AnyFactory>(
+  factoryOrOptions?: TFactory | FactoryDependencyOptions,
+  maybeOptions?: FactoryDependencyOptions,
 ): FactoryDependency<TFactory> {
   return globalRuntime.defineFactoryDependencyAt(
-    factory,
-    options,
+    factoryOrOptions,
+    maybeOptions,
     captureDefinitionSite(defineFactoryDependency),
   )
 }
