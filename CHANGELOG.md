@@ -1,5 +1,11 @@
 # ripple-di
 
+## 2.3.2
+
+### Patch Changes
+
+- 435638e: Allow `defineFactoryDependency<TFactory>()` to declare a factory dependency without a built-in implementation.
+
 ## 2.3.1
 
 ### Patch Changes
