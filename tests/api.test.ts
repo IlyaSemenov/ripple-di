@@ -20,6 +20,7 @@ import {
   type OverrideRunner,
   OwnedProvisionReuseError,
   type Provision,
+  type ProvisionCollectionInput,
   provide,
   provideFactory,
   resolve,
@@ -281,7 +282,14 @@ describe("provision input", () => {
   it("collects individual, listed, and conditional provisions", () => {
     const useValue = defineDependency<string>({ name: "collected-value" })
     const value = provide(useValue, "value")
-    const collected = collectProvisions(value, [value], false, null, undefined)
+    const inputs: ProvisionCollectionInput[] = [
+      value,
+      [value],
+      false,
+      null,
+      undefined,
+    ]
+    const collected = collectProvisions(...inputs)
 
     expectTypeOf(collected).toEqualTypeOf<readonly Provision[]>()
     expect(collected).toEqual([value, value])

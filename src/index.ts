@@ -16,6 +16,7 @@ export type {
 export type {
   ProvideOptions,
   Provision,
+  ProvisionCollectionInput,
   ProvisionInput,
 } from "./provide"
 export { collectProvisions, provide, provideFactory } from "./provide"
