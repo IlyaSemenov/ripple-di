@@ -1,5 +1,11 @@
 # ripple-di
 
+## 2.3.3
+
+### Patch Changes
+
+- 5020564: Export `ProvisionCollectionInput` so wrappers around `install` and `collectProvisions` can type their accepted inputs directly.
+
 ## 2.3.2
 
 ### Patch Changes
