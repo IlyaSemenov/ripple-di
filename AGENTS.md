@@ -27,7 +27,6 @@ Read [README.md](README.md) completely before changing the public API, resolutio
 
 ## Source map
 
-- `errors.ts` defines the public diagnostic error hierarchy.
 - `dependency.ts` defines the public `Dependency` contract, creates callable definitions, and owns their private metadata.
 - `provide.ts` defines typed provisions and owns their private metadata.
 - `value.ts` defines the public `asValue` marker for factory results and owns its private metadata.
@@ -83,9 +82,8 @@ Factory-created values are reused whenever their provider and recorded dependenc
   Factories may resolve dependencies from their current scope but cannot manage installation or scope context and lifecycle in their own runtime.
 - Keep the factory-first overload of `defineFactoryDependency` before its options-only overload in the `Runtime` interface, runtime implementation, and module-level function.
 - A dependency disposer applies only to values owned by Ripple DI: its built-in factory, `provideFactory`, and `provide` with `dispose: true`.
-  `dispose: true` in `defineDependency` uses `Symbol.asyncDispose` with `Symbol.dispose` as its fallback.
-  Capture the selected method when the value receives its owner, call it with the value as its receiver, and never call both methods.
-  Ignore the return value of `Symbol.dispose` and await the result of `Symbol.asyncDispose`.
+  `dispose: true` in `defineDependency` uses `Symbol.asyncDispose` with `Symbol.dispose` as its fallback, captured when the value receives its owner.
+  Call one captured method with the value as its receiver and never call both; ignore the result of `Symbol.dispose` and await the result of `Symbol.asyncDispose`.
   An explicit dependency disposer takes precedence over the standard disposal protocol.
   Values passed to plain `provide` are borrowed unless an explicit `options.dispose` callback transfers ownership to the receiving scope or installation.
   Keep `options.dispose: true` as reuse of the dependency's configured disposer and reject it when no disposer is configured.
