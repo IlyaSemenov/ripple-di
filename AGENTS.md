@@ -18,12 +18,16 @@ Module-level functions delegate to one built-in global runtime, so the usual sin
 
 Read [README.md](README.md) completely before changing the public API, resolution or reuse behavior, lifecycle, or user documentation.
 
+Extend this guide only with stable, non-obvious conventions, architecture, contracts, workflows, and gotchas.
+Do not catalog files or restate information evident from their names and locations.
+
 ## Scope
 
 - Keep production code in `src/`.
 - Use `src/*.test.ts` only for focused tests of one source module.
 - Keep subsystem, package-boundary, and type-inference tests in `tests/`.
 - Keep `src/index.ts` as exports only.
+- Treat `package.json` exports and supported runtimes as public contracts.
 
 ## Source map
 
@@ -126,6 +130,10 @@ Factory-created values are reused whenever their provider and recorded dependenc
 ## Documentation
 
 - Write public README and JSDoc text for an application developer who does not know Ripple DI internals.
+- Add JSDoc to every exported declaration and to internal helpers whose contract, inputs, output, or failure behavior is not obvious.
+- Add inline comments beside every non-obvious invariant, algorithmic choice, safety constraint, and intentionally limited behavior.
+- Update nearby JSDoc and inline comments whenever the documented code changes, and remove comments that no longer apply.
+- Do not narrate self-evident syntax or restate what a name already communicates.
 - Keep terms such as CellStamp, BindingStamp, provider home, and evaluation frame out of public explanations.
 - Do not document obvious or implied defaults.
 - Describe a default only when readers need it to make a decision or avoid surprising behavior.
@@ -164,8 +172,10 @@ Describe the user-visible change.
 
 - Add a `describe` block where the file gives a reason for it: several APIs or behaviors in one file, or a fixture that belongs to some cases but not all.
   Name such a block after what it covers and keep its fixtures inside it.
-- Use semantic names instead of ordinal placeholders such as `first` and `second`.
-- Keep model seeds deterministic and include the seed in failure messages.
+- Distinguish several same-kind values by role rather than by order.
+  When values differ only by order, number them with digits instead of ordinal words.
+- Keep tests deterministic so a failure repeats on every run.
+  Generate random inputs from an explicit seed and print the seed in failure messages so the failing input can be replayed.
 
 ## Checks
 
