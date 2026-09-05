@@ -37,6 +37,7 @@ Read [README.md](README.md) completely before changing the public API, resolutio
 - `resolution.ts` implements provider lookup, tracking, validation, promotion, and cycle detection.
 - `runtime.ts` defines the `Runtime` and `Installation` contracts and owns runtime creation, dependency definitions, callable routing, root installation, and the module-level API.
 - `scope.ts` defines the `Scope` contract and owns provision validation and binding, async context, and lifecycle boundaries.
+- `detached.ts` defines the `DetachedStream` contract and owns layer snapshots, their reproduction, and detached callbacks and streams.
 - `overrides.ts` defines the `OverrideRunner` and `ValueOverride` contracts and owns reusable override layers and helpers.
 
 Keep `index.ts` limited to explicit public exports because owner modules also export symbols for internal collaboration.
@@ -113,6 +114,10 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - A detached context reproduces every immutable binding layer between the current ambient scope and the runtime base without copying caches.
   Reuse borrowed values, reinstall factory recipes with new ownership, and reject the complete operation before creating scopes when any reproduced layer contains an owned-value provision.
   Require the current ambient scope to be active, but allow retiring ancestors that still serve an active descendant.
+  `runDetached` rejects a callback result that is a generator object with `TypeError`; do not replace that check with a structural `Symbol.asyncIterator` check.
+  `createDetachedStream` throws snapshot failures synchronously before creating scopes, runs the `open` callback synchronously inside the innermost reproduced scope, runs every iterator step there, and closes the scopes when the source finishes, a read fails, or the reader calls `return()`.
+  A `throw()` that the source survives keeps the scopes open.
+  Source failures reach the reader through the iterator; `return()` on a force-closed stream skips the source, and teardown failures still reach the reader.
 - Name the type parameter of a callback-based API `TCallbackResult` and infer it from the callback's own return type, whether or not the API awaits it.
   Declare an awaited result as `Promise<Awaited<TCallbackResult>>` instead of declaring the callback as returning `TCallbackResult | Promise<TCallbackResult>`, and do not export an alias for that form.
 - Do not add live mutation, signal effects, async resolution, previous-binding decorators, or cross-scope factory reads to the core API.

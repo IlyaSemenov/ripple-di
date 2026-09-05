@@ -79,11 +79,11 @@ describe("runtime instances", () => {
       runtime.withOverrides(removal, async () => {
         await Promise.resolve()
         expect(() => useTenant()).toThrow(MissingProviderError)
-        await runtime.withDetachedContext(() => {
+        await runtime.runDetached(() => {
           expect(() => useTenant()).toThrow(MissingProviderError)
         })
         await runtime.withOverrides(provide(useTenant, "nested"), () =>
-          runtime.withDetachedContext(() => {
+          runtime.runDetached(() => {
             expect(useTenant()).toBe("nested")
           }),
         )
@@ -262,7 +262,7 @@ describe("installation", () => {
     const tailGate = new Promise<void>((resolve) => {
       releaseTail = resolve
     })
-    const detachedTail = runtime.withDetachedOverrides([], () => tailGate)
+    const detachedTail = runtime.runDetached(() => tailGate)
 
     let conflict: unknown
     try {
@@ -280,32 +280,24 @@ describe("installation", () => {
     await runtime.dispose()
   })
 
-  it("force-closes detached scopes with their installation", async () => {
-    const runtime = createRuntime()
-    let disposed = 0
-    const useOwned = runtime.defineDependency<object>({
-      name: "owned",
-      dispose: () => {
-        disposed += 1
-      },
+  it("blocks installation while a detached stream is open", async () => {
+    const runtime = createRuntime({ name: "app" })
+    const stream = runtime.createDetachedStream(async function* () {
+      yield "open"
     })
-    const installation = runtime.install([])
-    let releaseTail!: () => void
-    const tailGate = new Promise<void>((resolve) => {
-      releaseTail = resolve
-    })
-    const detachedTail = runtime.withDetachedOverrides(
-      provide(useOwned, {}, { dispose: true }),
-      async () => {
-        useOwned()
-        await tailGate
-      },
-    )
 
+    let conflict: unknown
+    try {
+      runtime.install([])
+    } catch (caught) {
+      conflict = caught
+    }
+    expect(conflict).toBeInstanceOf(InstallationConflictError)
+    expect((conflict as InstallationConflictError).reason).toBe("live-scopes")
+
+    await stream[Symbol.asyncDispose]()
+    const installation = runtime.install([])
     await installation.close()
-    expect(disposed).toBe(1)
-    releaseTail()
-    await detachedTail
     await runtime.dispose()
   })
 
@@ -328,7 +320,7 @@ describe("installation", () => {
     await runtime.withOverrides(
       provideFactory(useResource, () => ({})),
       () => {
-        backgroundTask = runtime.withDetachedContext(async () => {
+        backgroundTask = runtime.runDetached(async () => {
           useResource()
           await backgroundGate
         })
@@ -360,7 +352,7 @@ describe("installation", () => {
     await runtime.withOverrides(
       provideFactory(useResource, () => ({})),
       () => {
-        backgroundTask = runtime.withDetachedContext(async () => {
+        backgroundTask = runtime.runDetached(async () => {
           useResource()
           await backgroundGate
         })

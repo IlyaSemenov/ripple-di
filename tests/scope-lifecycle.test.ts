@@ -13,6 +13,7 @@ import {
   provide,
   provideFactory,
   ScopeClosedError,
+  withoutProvider,
 } from "ripple-di"
 
 import { createQueryBuilder } from "./awaitable"
@@ -111,32 +112,22 @@ describe("ambient scope and concurrency", () => {
     await runtime.dispose()
   })
 
-  it("runs detached overrides outside the current ambient scope", async () => {
+  it("runs detached beneath the installation when called outside any scope", async () => {
     const runtime = createRuntime()
     const useTenant = runtime.defineDependency<string>({ name: "tenant" })
-    const useTail = runtime.defineDependency<string>({ name: "tail" })
     const installation = runtime.install(provide(useTenant, "installed"))
     let releaseTail!: () => void
     const tailGate = new Promise<void>((resolve) => {
       releaseTail = resolve
     })
-    let detachedTail!: Promise<string>
 
-    await runtime.withOverrides(provide(useTenant, "request"), () => {
-      expect(useTenant()).toBe("request")
-      detachedTail = runtime.withDetachedOverrides(
-        provide(useTail, "detached"),
-        async (scope) => {
-          expect(useTenant()).toBe("installed")
-          expect(scope.resolve(useTail)).toBe("detached")
-          await tailGate
-          return `${useTenant()}/${useTail()}`
-        },
-      )
+    const detachedTail = runtime.runDetached(async (scope) => {
+      await tailGate
+      return `${useTenant()}/${scope.resolve(useTenant)}`
     })
 
     releaseTail()
-    expect(await detachedTail).toBe("installed/detached")
+    expect(await detachedTail).toBe("installed/installed")
     await installation.close()
     await runtime.dispose()
   })
@@ -213,7 +204,7 @@ describe("detached context", () => {
     const callback = parent.run(async () => {
       await callbackGate
       error = await runtime
-        .withDetachedContext(() => useValue())
+        .runDetached(() => useValue())
         .then(
           () => undefined,
           (reason) => reason,
@@ -239,7 +230,7 @@ describe("detached context", () => {
     const retirement = parent.retire()
 
     const value = await child.run(() =>
-      runtime.withDetachedContext(() => `${useParent()}/${useChild()}`),
+      runtime.runDetached(() => `${useParent()}/${useChild()}`),
     )
 
     expect(value).toBe("parent/child")
@@ -268,7 +259,7 @@ describe("detached context", () => {
       [provide(useLocale, "de"), provide(useContext, sharedContext)],
       () =>
         runtime.withOverrides(provide(useTraceId, "request-42"), () => {
-          backgroundTask = runtime.withDetachedContext(async (scope) => {
+          backgroundTask = runtime.runDetached(async (scope) => {
             await backgroundGate
             return [
               useLocale(),
@@ -324,7 +315,7 @@ describe("detached context", () => {
             useInner()
             useOuter()
             sourceDerived = useDerived()
-            backgroundTask = runtime.withDetachedContext(async () => {
+            backgroundTask = runtime.runDetached(async () => {
               useInner()
               useOuter()
               const derived = useDerived()
@@ -362,7 +353,7 @@ describe("detached context", () => {
       }),
       async () => {
         const error = await runtime
-          .withDetachedContext(() => {
+          .runDetached(() => {
             callbackCalled = true
           })
           .then(
@@ -396,18 +387,391 @@ describe("detached context", () => {
       provideFactory(useSession, () => ({ id: nextSessionId++ })),
       () => {
         backgroundTasks = [
-          runtime.withDetachedContext(async () => {
+          runtime.runDetached(async () => {
             const session = useSession()
             await delay(ASYNC_CONTEXT_DELAY_MS)
             expect(useSession()).toBe(session)
             return session.id
           }),
-          runtime.withDetachedContext(() => useSession().id),
+          runtime.runDetached(() => useSession().id),
         ]
       },
     )
 
     expect(await Promise.all(backgroundTasks)).toEqual([1, 2])
+    await runtime.dispose()
+  })
+
+  it("removes a value from detached work with withoutProvider inside", async () => {
+    const runtime = createRuntime()
+    const useTenant = runtime.defineDependency<string>({ name: "tenant" })
+    const useUser = runtime.defineDependency<string>({ name: "user" })
+    let backgroundTask!: Promise<readonly [string, unknown]>
+
+    await runtime.withOverrides(
+      [provide(useTenant, "acme"), provide(useUser, "alice")],
+      () => {
+        backgroundTask = runtime.runDetached(() =>
+          runtime.withOverrides(withoutProvider(useUser), () => {
+            let userError: unknown
+            try {
+              useUser()
+            } catch (error) {
+              userError = error
+            }
+            return [useTenant(), userError] as const
+          }),
+        )
+      },
+    )
+
+    const [tenant, userError] = await backgroundTask
+    expect(tenant).toBe("acme")
+    expect(userError).toBeInstanceOf(MissingProviderError)
+    await runtime.dispose()
+  })
+
+  it("rejects a generator returned from the callback", async () => {
+    const runtime = createRuntime()
+    const useValue = runtime.defineDependency(() => "value", { name: "value" })
+    const results = await Promise.allSettled([
+      runtime.runDetached(async function* () {
+        yield useValue()
+      }),
+      runtime.runDetached(async () =>
+        (function* () {
+          yield useValue()
+        })(),
+      ),
+    ])
+
+    for (const result of results) {
+      expect(result.status).toBe("rejected")
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(TypeError)
+    }
+    await runtime.dispose()
+  })
+})
+
+describe("detached stream", () => {
+  async function* repeatReads(read: () => string) {
+    while (true) {
+      yield read()
+    }
+  }
+
+  it("reads the creating context after its scope closes", async () => {
+    const runtime = createRuntime()
+    const useLocale = runtime.defineDependency<string>({ name: "locale" })
+    const installation = runtime.install(provide(useLocale, "en"))
+
+    const stream = await runtime.withOverrides(provide(useLocale, "de"), () =>
+      runtime.createDetachedStream(() => repeatReads(() => useLocale())),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+
+    expect(runtime.resolve(useLocale)).toBe("en")
+    expect((await reader.next()).value).toBe("de")
+    await delay(ASYNC_CONTEXT_DELAY_MS)
+    expect((await reader.next()).value).toBe("de")
+    await reader.return?.()
+    await installation.close()
+    await runtime.dispose()
+  })
+
+  it("reproduces nested layers for the whole stream", async () => {
+    const runtime = createRuntime()
+    const useLocale = runtime.defineDependency<string>({ name: "locale" })
+    const useTraceId = runtime.defineDependency<string>({ name: "trace-id" })
+
+    const stream = await runtime.withOverrides(provide(useLocale, "de"), () =>
+      runtime.withOverrides(provide(useTraceId, "trace-1"), () =>
+        runtime.createDetachedStream(() =>
+          repeatReads(() => `${useLocale()}/${useTraceId()}`),
+        ),
+      ),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+
+    expect((await reader.next()).value).toBe("de/trace-1")
+    await reader.return?.()
+    await runtime.dispose()
+  })
+
+  it("opens the source synchronously inside the detached scope", async () => {
+    const runtime = createRuntime()
+    const useLocale = runtime.defineDependency<string>({ name: "locale" })
+    let openedWith: string | undefined
+    let openedIn: Scope | undefined
+
+    const stream = await runtime.withOverrides(provide(useLocale, "de"), () => {
+      const created = runtime.createDetachedStream((scope) => {
+        openedWith = useLocale()
+        openedIn = scope
+        return repeatReads(() => useLocale())
+      })
+      expect(openedWith).toBe("de")
+      return created
+    })
+
+    expect(openedIn?.resolve(useLocale)).toBe("de")
+    await stream[Symbol.asyncDispose]()
+    await runtime.dispose()
+  })
+
+  it("owns factory values until the reader returns", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useConnection = runtime.defineDependency<{ id: number }>({
+      name: "connection",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+
+    const stream = await runtime.withOverrides(
+      provideFactory(useConnection, () => ({ id: 1 })),
+      () =>
+        runtime.createDetachedStream(() =>
+          repeatReads(() => `connection-${useConnection().id}`),
+        ),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+
+    expect((await reader.next()).value).toBe("connection-1")
+    expect(disposed).toBe(0)
+    expect(await reader.return?.()).toEqual({ done: true, value: undefined })
+    expect(disposed).toBe(1)
+    expect(await reader.next()).toEqual({ done: true, value: undefined })
+    await runtime.dispose()
+  })
+
+  it("releases the scopes when the source finishes", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useConnection = runtime.defineDependency<object>({
+      name: "connection",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    const values: string[] = []
+
+    const stream = await runtime.withOverrides(
+      provideFactory(useConnection, () => ({})),
+      () =>
+        runtime.createDetachedStream(async function* () {
+          useConnection()
+          yield "single"
+        }),
+    )
+    for await (const value of stream) {
+      values.push(value)
+    }
+
+    expect(values).toEqual(["single"])
+    expect(disposed).toBe(1)
+    await runtime.dispose()
+  })
+
+  it("releases the scopes when a read fails", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useConnection = runtime.defineDependency<object>({
+      name: "connection",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    const failure = new Error("read failed")
+
+    const stream = await runtime.withOverrides(
+      provideFactory(useConnection, () => ({})),
+      () =>
+        runtime.createDetachedStream(async function* () {
+          useConnection()
+          yield "before failure"
+          throw failure
+        }),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+
+    expect((await reader.next()).value).toBe("before failure")
+    expect(await reader.next().catch((error) => error)).toBe(failure)
+    expect(disposed).toBe(1)
+    await runtime.dispose()
+  })
+
+  it("forwards throw() into the source context", async () => {
+    const runtime = createRuntime()
+    const useLocale = runtime.defineDependency<string>({ name: "locale" })
+    const signal = new Error("stop")
+    let caughtIn: string | undefined
+
+    const stream = await runtime.withOverrides(provide(useLocale, "de"), () =>
+      runtime.createDetachedStream(async function* () {
+        try {
+          yield "reading"
+        } catch (error) {
+          caughtIn = `${useLocale()}:${(error as Error).message}`
+          yield "recovered"
+        }
+      }),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+
+    expect((await reader.next()).value).toBe("reading")
+    expect((await reader.throw?.(signal))?.value).toBe("recovered")
+    expect(caughtIn).toBe("de:stop")
+    expect(await reader.next()).toEqual({ done: true, value: undefined })
+    await runtime.dispose()
+  })
+
+  it("rejects throw() from a source without throw and releases the scopes", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useConnection = runtime.defineDependency<object>({
+      name: "connection",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    const failure = new Error("stop")
+
+    const stream = await runtime.withOverrides(
+      provideFactory(useConnection, () => ({})),
+      () =>
+        runtime.createDetachedStream(
+          (): AsyncIterable<string> => ({
+            [Symbol.asyncIterator]: () => ({
+              next: async () => {
+                useConnection()
+                return { done: false, value: "reading" }
+              },
+            }),
+          }),
+        ),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+
+    expect((await reader.next()).value).toBe("reading")
+    expect(await reader.throw?.(failure).catch((error) => error)).toBe(failure)
+    expect(disposed).toBe(1)
+    await runtime.dispose()
+  })
+
+  it("closes an unread source in its context through asyncDispose", async () => {
+    const runtime = createRuntime()
+    const useLocale = runtime.defineDependency<string>({ name: "locale" })
+    let closedIn: string | undefined
+
+    const stream = await runtime.withOverrides(provide(useLocale, "de"), () =>
+      runtime.createDetachedStream(
+        (): AsyncIterable<string> => ({
+          [Symbol.asyncIterator]: () => ({
+            next: async () => ({ done: false, value: useLocale() }),
+            return: async () => {
+              closedIn = useLocale()
+              return { done: true, value: undefined }
+            },
+          }),
+        }),
+      ),
+    )
+
+    await stream[Symbol.asyncDispose]()
+
+    expect(closedIn).toBe("de")
+    const installation = runtime.install([])
+    await installation.close()
+    await runtime.dispose()
+  })
+
+  it("releases the scopes when opening the source fails", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useConnection = runtime.defineDependency<object>({
+      name: "connection",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    const failure = new Error("open failed")
+
+    await runtime.withOverrides(
+      provideFactory(useConnection, () => ({})),
+      () => {
+        expect(() =>
+          runtime.createDetachedStream(() => {
+            useConnection()
+            throw failure
+          }),
+        ).toThrow(failure)
+      },
+    )
+    await delay(ASYNC_CONTEXT_DELAY_MS)
+
+    expect(disposed).toBe(1)
+    const installation = runtime.install([])
+    await installation.close()
+    await runtime.dispose()
+  })
+
+  it("rejects owned values before opening the source", async () => {
+    const runtime = createRuntime()
+    const useConnection = runtime.defineDependency<object>({
+      name: "connection",
+    })
+    let opened = false
+
+    await runtime.withOverrides(
+      provide(useConnection, {}, { dispose: () => {} }),
+      () => {
+        expect(() =>
+          runtime.createDetachedStream(() => {
+            opened = true
+            return repeatReads(() => "unreachable")
+          }),
+        ).toThrow(DetachedContextOwnedProvisionError)
+      },
+    )
+
+    expect(opened).toBe(false)
+    const installation = runtime.install([])
+    await installation.close()
+    await runtime.dispose()
+  })
+
+  it("reports a closed context to the reader after its installation closes", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useConnection = runtime.defineDependency<object>({
+      name: "connection",
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    const installation = runtime.install([])
+
+    const stream = await runtime.withOverrides(
+      provideFactory(useConnection, () => ({})),
+      () =>
+        runtime.createDetachedStream(async function* () {
+          while (true) {
+            useConnection()
+            yield "reading"
+          }
+        }),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+
+    expect((await reader.next()).value).toBe("reading")
+    await installation.close()
+    expect(disposed).toBe(1)
+    expect(await reader.next().catch((error) => error)).toBeInstanceOf(
+      ScopeClosedError,
+    )
+    expect(await reader.return?.()).toEqual({ done: true, value: undefined })
     await runtime.dispose()
   })
 })
@@ -757,13 +1121,12 @@ describe("owned value lifecycle", () => {
         },
       ],
       ["Runtime.withOverrides", () => runtime.withOverrides([], () => {})],
+      ["Runtime.runDetached", () => runtime.runDetached(() => {})],
       [
-        "Runtime.withDetachedOverrides",
-        () => runtime.withDetachedOverrides([], () => {}),
-      ],
-      [
-        "Runtime.withDetachedContext",
-        () => runtime.withDetachedContext(() => {}),
+        "Runtime.createDetachedStream",
+        () => {
+          runtime.createDetachedStream(async function* () {})
+        },
       ],
       [
         "OverrideRunner.run",

@@ -632,13 +632,10 @@ describe("resolution and tracking", () => {
       ["Runtime.install", () => runtime.install([])],
       ["Runtime.createScope", () => runtime.createScope()],
       ["Runtime.withOverrides", () => runtime.withOverrides([], () => {})],
+      ["Runtime.runDetached", () => runtime.runDetached(() => {})],
       [
-        "Runtime.withDetachedOverrides",
-        () => runtime.withDetachedOverrides([], () => {}),
-      ],
-      [
-        "Runtime.withDetachedContext",
-        () => runtime.withDetachedContext(() => {}),
+        "Runtime.createDetachedStream",
+        () => runtime.createDetachedStream(async function* () {}),
       ],
       ["OverrideRunner.run", () => runner.run(() => {})],
       ["ValueOverride", () => overrideValue({}, () => {})],

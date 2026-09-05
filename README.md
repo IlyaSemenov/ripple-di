@@ -71,8 +71,8 @@ The package is published as ESM.
 | Make a dependency unavailable                 | `withoutProvider`
 | Memoize a getter or zero-argument method      | `@memo`
 | Keep one scope open across several operations | `createScope`
-| Continue every current override layer         | `withDetachedContext`
-| Run detached with selected overrides          | `withDetachedOverrides`
+| Continue work after the current scope closes  | `runDetached`
+| Read an async source after the scope closes   | `createDetachedStream`
 | Shut everything down                          | `dispose`
 
 `createValueOverride` and `createOverrideRunner` in [Advanced usage](#advanced-usage) turn overrides you write repeatedly into reusable helpers.
@@ -574,14 +574,13 @@ await scope.run(() => processTenant())
 
 ### Continue after the current scope closes
 
-`withDetachedContext` and `withDetachedOverrides` run work outside the current ambient scope, so a request or another scoped operation can close while that work continues.
-
-Use `withDetachedContext` to continue with every override layer that is active when you call it:
+`runDetached` runs work outside the current ambient scope, so a request or another scoped operation can close while that work continues.
+The work keeps every override layer that is active when you call it:
 
 ```ts
-import { withDetachedContext } from "ripple-di"
+import { runDetached } from "ripple-di"
 
-const backgroundTask = withDetachedContext(() =>
+const backgroundTask = runDetached(() =>
   updateTenantSearchIndex(),
 )
 
@@ -595,32 +594,57 @@ It reproduces those layers in new scopes without copying cached dependency value
 - Provider removals made with `withoutProvider` are preserved.
 - If a layer owns an existing provided value, the call rejects with `DetachedContextOwnedProvisionError` because the value cannot belong to both contexts.
 
-Use `withDetachedOverrides` when the work should receive only selected values, especially across a security-sensitive boundary:
+To keep a value away from the detached work, remove or replace it inside:
 
 ```ts
-import { provide, withDetachedOverrides } from "ripple-di"
+import { runDetached, withoutProvider, withOverrides } from "ripple-di"
 
-const tenant = useTenant()
-
-const backgroundTask = withDetachedOverrides(
-  provide(useTenant, tenant),
-  () => updateTenantSearchIndex(),
+const backgroundTask = runDetached(() =>
+  withOverrides(withoutProvider(useCurrentUser), () =>
+    updateTenantSearchIndex(),
+  ),
 )
-
-trackBackgroundTask(backgroundTask)
 ```
 
-Both functions create scopes beneath the active installation, or beneath the runtime root when no installation is active.
+Detached scopes are created beneath the active installation, or beneath the runtime root when no installation is active.
 Closing the installation or calling `dispose()` force-closes them, and an unfinished root child prevents `install()`.
 
 The scope remains current while the callback runs and while Ripple DI awaits its result.
 The returned promise settles after cleanup, so code that needs the detached context, including finalization, belongs inside the callback:
 
 ```ts
-withDetachedContext(() =>
+runDetached(() =>
   runBackgroundTask().finally(finalizeBackgroundTask),
 )
 ```
+
+A callback that returns a generator is rejected with `TypeError`, because the generator would run after the detached scope has closed.
+Use `createDetachedStream` for that.
+
+#### Read an async source after the scope closes
+
+The body of an async generator runs when something reads from it, not when the generator is created.
+A subscription opened inside a request would therefore read dependencies after the request scope has closed, and get `ScopeClosedError` or another tenant's values.
+`createDetachedStream` opens such a source inside a detached context and keeps that context for every read until the reader is done:
+
+```ts
+import { createDetachedStream } from "ripple-di"
+
+function subscribeToOrders(signal: AbortSignal) {
+  return createDetachedStream(async function* () {
+    const db = useDb()
+    while (!signal.aborted) {
+      yield* await db.query("select * from order_events")
+      await delay(1_000)
+    }
+  })
+}
+```
+
+- The `open` callback runs immediately inside the detached scopes, so anything it subscribes to before returning the source is in place when `createDetachedStream` returns.
+- Every `next()`, `return()`, and `throw()` runs inside the detached scopes.
+- The scopes close when the source finishes, when a read fails, or when the reader calls `return()`, which `for await` and `await using` do for you.
+- A stream nobody reads keeps its scopes open until `return()` or `Symbol.asyncDispose` closes it.
 
 ### Name an override you write repeatedly
 
@@ -767,8 +791,8 @@ Every runtime has the same methods, and each has a module-level counterpart that
 - `resolve`
 - `createScope`
 - `withOverrides`
-- `withDetachedContext`
-- `withDetachedOverrides`
+- `runDetached`
+- `createDetachedStream`
 - `createValueOverride`
 - `createOverrideRunner`
 - `dispose`

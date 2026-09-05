@@ -6,6 +6,7 @@ import {
   AsyncFactoryError,
   asValue,
   collectProvisions,
+  createDetachedStream,
   createOverrideRunner,
   createRuntime,
   createScope,
@@ -16,6 +17,7 @@ import {
   install,
   MissingProviderError,
   provide,
+  runDetached,
   ScopeClosedError,
   withOverrides,
   withoutProvider,
@@ -196,6 +198,32 @@ async function checkMultipleRuntimes() {
   ])
 }
 
+// A detached stream keeps the request's overrides for every read after the
+// request scope has closed, and runDetached refuses a generator result.
+async function checkDetached() {
+  const stream = await withOverrides(
+    provide(useConfig, { url: "detached" }),
+    () =>
+      createDetachedStream(async function* () {
+        while (true) {
+          yield useDb().url
+        }
+      }),
+  )
+  const reader = stream[Symbol.asyncIterator]()
+
+  assert.equal((await reader.next()).value, "detached")
+  assert.equal((await reader.next()).value, "detached")
+  assert.ok(!closedDatabases.includes("detached"))
+  await stream[Symbol.asyncDispose]()
+  assert.ok(closedDatabases.includes("detached"))
+  assert.equal(await runDetached(() => useDb().url), "production")
+  await assert.rejects(
+    runDetached(async function* () {}),
+    TypeError,
+  )
+}
+
 async function checkWithoutProvider() {
   await assert.rejects(
     withOverrides(withoutProvider(useConfig), () => useDb()),
@@ -220,6 +248,7 @@ checkOwnedValueCleanup()
 await checkPromiseHandling()
 await checkAwaitableValue()
 await checkMultipleRuntimes()
+await checkDetached()
 await checkWithoutProvider()
 await checkShutdown()
 

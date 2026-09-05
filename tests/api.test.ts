@@ -3,11 +3,13 @@ import { afterAll, describe, expect, expectTypeOf, it } from "bun:test"
 import {
   asValue,
   collectProvisions,
+  createDetachedStream,
   createOverrideRunner,
   createRuntime,
   createScope,
   createValueOverride,
   type Dependency,
+  type DetachedStream,
   defineDependency,
   defineFactoryDependency,
   dispose,
@@ -24,10 +26,9 @@ import {
   provide,
   provideFactory,
   resolve,
+  runDetached,
   type Scope,
   type ValueOverride,
-  withDetachedContext,
-  withDetachedOverrides,
   withOverrides,
   withoutProvider,
 } from "ripple-di"
@@ -304,18 +305,25 @@ describe("module-level API", () => {
     expect(() => useInstalledConfig()).toThrow(MissingProviderError)
   })
 
-  it("exposes detached overrides through the module-level API", async () => {
-    const result: Promise<number> = withDetachedOverrides([], async (scope) => {
-      expectTypeOf(scope).toEqualTypeOf<Scope>()
-      await Promise.resolve()
-      return 42
-    })
+  it("exposes detached streams through the module-level API", async () => {
+    const stream: DetachedStream<number> = createDetachedStream(
+      async function* (scope) {
+        expectTypeOf(scope).toEqualTypeOf<Scope>()
+        yield 42
+      },
+    )
+    const values: number[] = []
 
-    expect(await result).toBe(42)
+    for await (const value of stream) {
+      expectTypeOf(value).toEqualTypeOf<number>()
+      values.push(value)
+    }
+
+    expect(values).toEqual([42])
   })
 
   it("exposes detached context through the module-level API", async () => {
-    const result: Promise<number> = withDetachedContext(async (scope) => {
+    const result: Promise<number> = runDetached(async (scope) => {
       expectTypeOf(scope).toEqualTypeOf<Scope>()
       await Promise.resolve()
       return 42
@@ -588,13 +596,19 @@ describe("type inference", () => {
 
     const globalCall = withOverrides([], countOrLoad)
     const runtimeCall = runtime.withOverrides([], countOrLoad)
-    const globalDetachedCall = withDetachedContext(countOrLoad)
-    const runtimeDetachedCall = runtime.withDetachedContext(countOrLoad)
+    const globalDetachedCall = runDetached(countOrLoad)
+    const runtimeDetachedCall = runtime.runDetached(countOrLoad)
     const scopeCall = scope.withOverrides([], countOrLoad)
     const runCall = runner.run(countOrLoad)
     const wrapped = runner.wrap(countOrLoad)
     // Only the scoped callbacks are awaited; run returns its result unchanged.
     const thenableRun = scope.run(() => createQueryBuilder("callback"))
+    const globalStream = createDetachedStream(async function* () {
+      yield 1
+    })
+    const runtimeStream = runtime.createDetachedStream(async function* () {
+      yield "value"
+    })
 
     expectTypeOf(globalCall).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(runtimeCall).toEqualTypeOf<Promise<number | string>>()
@@ -604,6 +618,8 @@ describe("type inference", () => {
     expectTypeOf(runCall).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(wrapped).toEqualTypeOf<() => Promise<number | string>>()
     expectTypeOf(thenableRun).toEqualTypeOf<QueryBuilder>()
+    expectTypeOf(globalStream).toEqualTypeOf<DetachedStream<number>>()
+    expectTypeOf(runtimeStream).toEqualTypeOf<DetachedStream<string>>()
 
     expect(await globalCall).toBe(1)
     expect(await runtimeCall).toBe(1)
@@ -614,6 +630,8 @@ describe("type inference", () => {
     expect(await wrapped()).toBe(1)
     expect(await thenableRun).toEqual(["rows from callback"])
 
+    await globalStream[Symbol.asyncDispose]()
+    await runtimeStream[Symbol.asyncDispose]()
     await scope.close()
     await runtime.dispose()
   })

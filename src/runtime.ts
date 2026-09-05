@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks"
+import { isGeneratorObject } from "node:util/types"
 
 import {
   type AnyFactory,
@@ -12,6 +13,11 @@ import {
   type FactoryDependencyOptions,
   nodeOf,
 } from "./dependency"
+import {
+  createDetachedScopeStream,
+  type DetachedStream,
+  runDetachedScopeContext,
+} from "./detached"
 import {
   CrossRuntimeDependencyError,
   DisposerContextError,
@@ -43,12 +49,7 @@ import {
   type ProvisionInput,
 } from "./provide"
 import { resolveTracked } from "./resolution"
-import {
-  type Scope,
-  ScopeImpl,
-  withChildScope,
-  withDetachedScopeContext,
-} from "./scope"
+import { type Scope, ScopeImpl, withChildScope } from "./scope"
 import type { FactoryResult } from "./value"
 
 /** Options for starting an independent dependency graph. */
@@ -141,25 +142,23 @@ export interface Runtime extends AsyncDisposable {
   ): Promise<Awaited<TCallbackResult>>
 
   /**
-   * Runs a callback in a temporary child of the runtime's current base scope.
-   *
-   * The callback does not inherit the current ambient scope, but its scope
-   * remains owned by the active installation or runtime root.
-   */
-  withDetachedOverrides<TCallbackResult>(
-    provisions: ProvisionInput,
-    callback: (scope: Scope) => TCallbackResult,
-  ): Promise<Awaited<TCallbackResult>>
-
-  /**
    * Continues the current dependency context outside its original scope.
    *
    * The runtime reproduces every current override layer beneath its active
    * installation or root without copying cached dependency values.
    */
-  withDetachedContext<TCallbackResult>(
+  runDetached<TCallbackResult>(
     callback: (scope: Scope) => TCallbackResult,
   ): Promise<Awaited<TCallbackResult>>
+
+  /**
+   * Opens an async source inside the current dependency context and keeps
+   * that context for every read until the source finishes or the reader
+   * closes the stream.
+   */
+  createDetachedStream<T>(
+    open: (scope: Scope) => AsyncIterable<T>,
+  ): DetachedStream<T>
 
   /**
    * Prepares overrides that are applied again to each call of the returned
@@ -329,22 +328,35 @@ class RuntimeImpl implements RuntimeContext {
     return withChildScope(this.currentAmbientScope(), provisions, callback)
   }
 
-  withDetachedOverrides<TCallbackResult>(
-    provisions: ProvisionInput,
+  runDetached<TCallbackResult>(
     callback: (scope: Scope) => TCallbackResult,
   ): Promise<Awaited<TCallbackResult>> {
-    this.assertScopeManagementAllowed("Runtime.withDetachedOverrides")
-    return withChildScope(this.baseScope(), provisions, callback)
-  }
-
-  withDetachedContext<TCallbackResult>(
-    callback: (scope: Scope) => TCallbackResult,
-  ): Promise<Awaited<TCallbackResult>> {
-    this.assertScopeManagementAllowed("Runtime.withDetachedContext")
-    return withDetachedScopeContext(
+    this.assertScopeManagementAllowed("Runtime.runDetached")
+    return runDetachedScopeContext(
       this.baseScope(),
       this.currentAmbientScope(),
-      callback,
+      async (scope) => {
+        const result = await callback(scope)
+        if (isGeneratorObject(result)) {
+          throw new TypeError(
+            "runDetached callback returned a generator, which would " +
+              "run after the detached context closes. Open the source with " +
+              "createDetachedStream instead.",
+          )
+        }
+        return result
+      },
+    )
+  }
+
+  createDetachedStream<T>(
+    open: (scope: Scope) => AsyncIterable<T>,
+  ): DetachedStream<T> {
+    this.assertScopeManagementAllowed("Runtime.createDetachedStream")
+    return createDetachedScopeStream(
+      this.baseScope(),
+      this.currentAmbientScope(),
+      open,
     )
   }
 
@@ -605,29 +617,30 @@ export function withOverrides<TCallbackResult>(
 }
 
 /**
- * Runs a callback with overrides outside the current ambient scope.
- *
- * The temporary scope inherits from the active installation or runtime root
- * and remains part of that lifecycle until the callback finishes.
- */
-export function withDetachedOverrides<TCallbackResult>(
-  provisions: ProvisionInput,
-  callback: (scope: Scope) => TCallbackResult,
-): Promise<Awaited<TCallbackResult>> {
-  return globalRuntime.withDetachedOverrides(provisions, callback)
-}
-
-/**
  * Continues the current dependency context outside its original scope.
  *
  * Current override layers are reproduced beneath the active installation or
  * runtime root without copying cached values, and are cleaned up after the
  * callback finishes.
  */
-export function withDetachedContext<TCallbackResult>(
+export function runDetached<TCallbackResult>(
   callback: (scope: Scope) => TCallbackResult,
 ): Promise<Awaited<TCallbackResult>> {
-  return globalRuntime.withDetachedContext(callback)
+  return globalRuntime.runDetached(callback)
+}
+
+/**
+ * Opens an async source that keeps the current dependency context for every
+ * read.
+ *
+ * The source is opened immediately inside reproduced override layers, each
+ * read runs inside them, and they are cleaned up when the source finishes or
+ * the reader closes the stream.
+ */
+export function createDetachedStream<T>(
+  open: (scope: Scope) => AsyncIterable<T>,
+): DetachedStream<T> {
+  return globalRuntime.createDetachedStream(open)
 }
 
 /**

@@ -1,7 +1,6 @@
 import { cleanupOf, type DependencyToken, nodeOf } from "./dependency"
 import {
   CrossRuntimeDependencyError,
-  DetachedContextOwnedProvisionError,
   DuplicateProviderError,
   LeakedChildScopeError,
   ScopeClosedError,
@@ -21,11 +20,8 @@ import {
   type Provision,
   type ProvisionInput,
   type ProvisionRecord,
-  provide,
-  provideFactory,
   provisionListOf,
   provisionOf,
-  withoutProvider,
 } from "./provide"
 import { resolveTracked } from "./resolution"
 
@@ -362,117 +358,43 @@ export async function withChildScope<TCallbackResult>(
     errors.push(error)
   }
 
-  if (child.children.size > 0) {
-    errors.push(new LeakedChildScopeError(child.name, child.children.size))
-  }
-
-  try {
-    await child.close()
-  } catch (error) {
-    collectError(errors, error)
-  }
-
-  if (errors.length === 1) {
-    throw errors[0]
-  }
-  if (errors.length > 1) {
-    throw new AggregateError(
-      errors,
-      `Errors in scoped callback "${child.name}".`,
-    )
-  }
+  await closeTemporaryScopes(child, child, errors)
+  throwCollected(errors, `Errors in scoped callback "${child.name}".`)
   if (callbackFailed) {
     throw new Error("ripple-di lost a scoped callback error.")
   }
   return result
 }
 
-/** Reproduces the current scope layers beneath a separate lifecycle parent. */
-export async function withDetachedScopeContext<TCallbackResult>(
-  base: ScopeContext,
-  current: ScopeContext,
-  callback: (scope: ScopeContext) => TCallbackResult,
-): Promise<Awaited<TCallbackResult>> {
-  const snapshots = snapshotDetachedLayers(base, current)
-  const layers = snapshots.length > 0 ? snapshots : [[]]
-  return await replayDetachedLayers(base, layers, 0, callback)
-}
-
-/** Captures immutable provider recipes without retaining scope caches. */
-function snapshotDetachedLayers(
-  base: ScopeContext,
-  current: ScopeContext,
-): readonly (readonly Provision[])[] {
-  if (current.state !== "active") {
-    throw new ScopeClosedError(
-      "Runtime.withDetachedContext",
-      current.name,
-      current.id,
-      current.state,
+/** Closes a temporary scope tree and records leaked children and teardown failures. */
+export async function closeTemporaryScopes(
+  outermost: ScopeContext,
+  innermost: ScopeContext,
+  errors: unknown[],
+): Promise<void> {
+  if (innermost.children.size > 0) {
+    errors.push(
+      new LeakedChildScopeError(innermost.name, innermost.children.size),
     )
   }
-
-  const scopes: ScopeContext[] = []
-  let cursor: ScopeContext | undefined = current
-
-  while (cursor !== base) {
-    if (!cursor) {
-      throw new Error(
-        `Scope "${current.name}" is not beneath base scope "${base.name}".`,
-      )
-    }
-    if (cursor.state === "closing" || cursor.state === "closed") {
-      throw new ScopeClosedError(
-        "Runtime.withDetachedContext",
-        cursor.name,
-        cursor.id,
-        cursor.state,
-      )
-    }
-    scopes.push(cursor)
-    cursor = cursor[scopeParent]
+  try {
+    await outermost.close()
+  } catch (error) {
+    collectError(errors, error)
   }
-
-  scopes.reverse()
-
-  for (const scope of scopes) {
-    for (const binding of scope.bindings.values()) {
-      if (binding.spec.kind === "owned-value") {
-        throw new DetachedContextOwnedProvisionError(
-          nodeOf(binding.stamp.dependency).name,
-          scope.name,
-        )
-      }
-    }
-  }
-
-  return scopes.map((scope) =>
-    [...scope.bindings.values()].map((binding) =>
-      binding.spec.kind === "missing"
-        ? withoutProvider(binding.stamp.dependency)
-        : binding.spec.kind === "factory"
-          ? provideFactory(binding.stamp.dependency, binding.spec.factory)
-          : provide(binding.stamp.dependency, binding.spec.value),
-    ),
-  )
 }
 
-/** Enters reproduced layers from the original outermost layer inward. */
-async function replayDetachedLayers<TCallbackResult>(
-  parent: ScopeContext,
-  layers: readonly (readonly Provision[])[],
-  index: number,
-  callback: (scope: ScopeContext) => TCallbackResult,
-): Promise<Awaited<TCallbackResult>> {
-  const provisions = layers[index]
-  if (!provisions) {
-    throw new Error("ripple-di lost a detached context layer.")
+/** Throws one collected error as is and several as one `AggregateError`. */
+export function throwCollected(
+  errors: readonly unknown[],
+  message: string,
+): void {
+  if (errors.length === 1) {
+    throw errors[0]
   }
-  return await withChildScope(parent, provisions, (scope) =>
-    index === layers.length - 1
-      ? callback(scope)
-      : replayDetachedLayers(scope, layers, index + 1, callback),
-  )
+  if (errors.length > 1) {
+    throw new AggregateError([...errors], message)
+  }
 }
 
 function createDeferred(): LifecycleDeferred {
@@ -485,7 +407,8 @@ function createDeferred(): LifecycleDeferred {
   return { promise, resolve: settle, reject }
 }
 
-function collectError(errors: unknown[], error: unknown): void {
+/** Records an error, flattening an `AggregateError` into its members. */
+export function collectError(errors: unknown[], error: unknown): void {
   if (error instanceof AggregateError) {
     errors.push(...error.errors)
   } else {
