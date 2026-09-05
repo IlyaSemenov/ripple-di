@@ -138,7 +138,9 @@ class DependencyNodeImpl<T> implements DependencyNode<T> {
 }
 
 /** Captures and reduces a definition stack before it enters private metadata. */
-export function captureDefinitionSite(caller: Function): string | undefined {
+export function captureDefinitionSite(
+  caller: (...args: never) => unknown,
+): string | undefined {
   const error = new Error()
   const captureStackTrace =
     typeof Error.captureStackTrace === "function"
@@ -173,7 +175,7 @@ function definitionSiteFromFrame(frame: string): string | undefined {
   }
 
   const match = /^(.*):(\d+):\d+$/.exec(location)
-  if (!match || !match[1]) {
+  if (!match?.[1]) {
     return undefined
   }
 

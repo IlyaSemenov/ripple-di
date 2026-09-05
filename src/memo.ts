@@ -19,7 +19,7 @@ interface MemoCell<T> {
   readonly dependencies: readonly DependencyIdentityRecord[]
 }
 
-type ZeroArgumentMethod<TMethod extends (...args: any[]) => any> =
+type ZeroArgumentMethod<TMethod extends (...args: never[]) => unknown> =
   Parameters<TMethod> extends [] ? TMethod : never
 
 /**
@@ -46,8 +46,8 @@ function createMemoized<TReceiver extends object | undefined, TResult>(
   let standaloneCell: MemoCell<TResult> | undefined
   const identity = Symbol(name)
 
-  return function memoized(this: TReceiver): TResult {
-    if (arguments.length !== 0) {
+  return function memoized(this: TReceiver, ...args: unknown[]): TResult {
+    if (args.length !== 0) {
       throw new TypeError("A dependency-aware memo does not accept arguments.")
     }
     if (
@@ -120,7 +120,7 @@ export function memo<TObject extends object, TResult>(
 ): (this: TObject) => TResult
 export function memo<
   TObject extends object,
-  TMethod extends (this: TObject, ...args: any[]) => any,
+  TMethod extends (this: TObject, ...args: unknown[]) => unknown,
 >(
   value: ZeroArgumentMethod<TMethod>,
   context: ClassMethodDecoratorContext<TObject, TMethod>,
