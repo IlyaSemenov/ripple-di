@@ -1,5 +1,11 @@
 # ripple-di
 
+## 2.4.1
+
+### Patch Changes
+
+- dd4c7b2: Fix implicit-any errors in `defineFactoryDependency` and `runtime.defineFactoryDependency` when passing a factory as the only argument with an explicit factory type.
+
 ## 2.4.0
 
 ### Minor Changes
