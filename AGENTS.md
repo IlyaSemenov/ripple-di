@@ -80,6 +80,7 @@ Factory-created values are reused whenever their provider and recorded dependenc
   Keep the options-only overload of `defineDependency` before its factory-first overload so TypeScript reports invalid values against `() => T`.
   A factory passed as the first argument is the only way to define a built-in fallback; do not add `default`, `value`, or `initial` options.
   Factories may resolve dependencies from their current scope but cannot manage installation or scope context and lifecycle in their own runtime.
+- Keep the factory-first overload of `defineFactoryDependency` before its options-only overload in the `Runtime` interface, runtime implementation, and module-level function.
 - A dependency disposer applies only to values owned by Ripple DI: its built-in factory, `provideFactory`, and `provide` with `dispose: true`.
   `dispose: true` in `defineDependency` uses `Symbol.asyncDispose` with `Symbol.dispose` as its fallback.
   Capture the selected method when the value receives its owner, call it with the value as its receiver, and never call both methods.

@@ -134,6 +134,34 @@ describe("dependency-aware memo types", () => {
 })
 
 describe("factory dependency", () => {
+  it("contextually types a built-in factory from its explicit signature", () => {
+    const trim = defineFactoryDependency<(value: string) => string>((value) => {
+      expectTypeOf(value).toEqualTypeOf<string>()
+      return value.trim()
+    })
+
+    expectTypeOf(trim).toEqualTypeOf<
+      FactoryDependency<(value: string) => string>
+    >()
+    expect(trim(" value ")).toBe("value")
+  })
+
+  it("contextually types a runtime factory from its explicit signature", async () => {
+    const runtime = createRuntime()
+    const trim = runtime.defineFactoryDependency<(value: string) => string>(
+      (value) => {
+        expectTypeOf(value).toEqualTypeOf<string>()
+        return value.trim()
+      },
+    )
+
+    expectTypeOf(trim).toEqualTypeOf<
+      FactoryDependency<(value: string) => string>
+    >()
+    expect(trim(" value ")).toBe("value")
+    await runtime.dispose()
+  })
+
   it("defines a factory slot without a built-in implementation", async () => {
     type LoadContext = (bucket: string) => Promise<{ bucket: string }>
     const LoadContext = defineFactoryDependency<LoadContext>()

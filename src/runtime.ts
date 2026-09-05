@@ -98,15 +98,6 @@ export interface Runtime extends AsyncDisposable {
   ): Dependency<T>
 
   /**
-   * Defines an overrideable factory with no built-in implementation.
-   *
-   * Supply it through an installation or scope before calling it.
-   */
-  defineFactoryDependency<TFactory extends AnyFactory>(
-    options?: FactoryDependencyOptions,
-  ): FactoryDependency<TFactory>
-
-  /**
    * Defines an overrideable factory invoked with ordinary runtime arguments.
    *
    * Each call resolves the current factory and invokes it without caching or
@@ -114,6 +105,15 @@ export interface Runtime extends AsyncDisposable {
    */
   defineFactoryDependency<TFactory extends AnyFactory>(
     factory: TFactory,
+    options?: FactoryDependencyOptions,
+  ): FactoryDependency<TFactory>
+
+  /**
+   * Defines an overrideable factory with no built-in implementation.
+   *
+   * Supply it through an installation or scope before calling it.
+   */
+  defineFactoryDependency<TFactory extends AnyFactory>(
     options?: FactoryDependencyOptions,
   ): FactoryDependency<TFactory>
 
@@ -243,10 +243,10 @@ class RuntimeImpl implements RuntimeContext {
   }
 
   defineFactoryDependency<TFactory extends AnyFactory>(
+    factory: TFactory,
     options?: FactoryDependencyOptions,
   ): FactoryDependency<TFactory>
   defineFactoryDependency<TFactory extends AnyFactory>(
-    factory: TFactory,
     options?: FactoryDependencyOptions,
   ): FactoryDependency<TFactory>
   defineFactoryDependency<TFactory extends AnyFactory>(
@@ -541,14 +541,6 @@ export function defineDependency<T>(
 }
 
 /**
- * Defines an overrideable factory with no built-in implementation.
- *
- * Supply it through an installation or scope before calling it.
- */
-export function defineFactoryDependency<TFactory extends AnyFactory>(
-  options?: FactoryDependencyOptions,
-): FactoryDependency<TFactory>
-/**
  * Defines an overrideable factory invoked with ordinary runtime arguments.
  *
  * Each call resolves the current factory and invokes it without caching or
@@ -556,6 +548,14 @@ export function defineFactoryDependency<TFactory extends AnyFactory>(
  */
 export function defineFactoryDependency<TFactory extends AnyFactory>(
   factory: TFactory,
+  options?: FactoryDependencyOptions,
+): FactoryDependency<TFactory>
+/**
+ * Defines an overrideable factory with no built-in implementation.
+ *
+ * Supply it through an installation or scope before calling it.
+ */
+export function defineFactoryDependency<TFactory extends AnyFactory>(
   options?: FactoryDependencyOptions,
 ): FactoryDependency<TFactory>
 export function defineFactoryDependency<TFactory extends AnyFactory>(
