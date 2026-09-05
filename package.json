@@ -1,7 +1,7 @@
 {
   "name": "ripple-di",
   "type": "module",
-  "version": "2.4.1",
+  "version": "3.0.0",
   "description": "Next-generation DI for TypeScript with async scopes, transitive overrides, and automatic resource cleanup.",
   "keywords": [
     "dependency-injection",

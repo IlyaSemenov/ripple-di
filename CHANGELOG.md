@@ -1,5 +1,12 @@
 # ripple-di
 
+## 3.0.0
+
+### Major Changes
+
+- e444e85: Rename `withDetachedContext` to `runDetached` and remove `withDetachedOverrides`.
+  Add `createDetachedStream`, which opens an async source that keeps the current dependency context for every read.
+
 ## 2.4.1
 
 ### Patch Changes
