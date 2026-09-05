@@ -1,5 +1,11 @@
 # ripple-di
 
+## 2.4.0
+
+### Minor Changes
+
+- c9a032b: Add `withoutProvider(dependency)` to make a dependency unavailable.
+
 ## 2.3.3
 
 ### Patch Changes
