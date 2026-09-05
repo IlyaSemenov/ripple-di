@@ -92,6 +92,9 @@ Factory-created values are reused whenever their provider and recorded dependenc
   An owned-value provision can be installed for only one scope or installation; borrowed-value and factory provisions remain reusable.
   Values created by `provideFactory` are owned by the receiving scope or installation and use the dependency's configured disposer.
 - Accept one provision or a list of them wherever provisions are supplied, and normalize the input once in the scope-creation boundary rather than in each entry point.
+- Keep `withoutProvider` as a reusable missing-provider binding that masks inherited providers and built-in factories.
+  Report blocked reads through the normal `MissingProviderError` resolution path, allow child provisions to replace the binding, and preserve it in detached contexts.
+  Do not dispose or invalidate ancestor values when installing or closing a removal binding.
 - Disposers and their async descendants cannot resolve dependencies or manage installations or scopes in the runtime being closed.
   Run them with their closing owner as both the ambient scope and teardown context.
   All teardown errors are aggregated after cleanup continues.

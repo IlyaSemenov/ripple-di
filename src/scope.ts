@@ -25,6 +25,7 @@ import {
   provideFactory,
   provisionListOf,
   provisionOf,
+  withoutProvider,
 } from "./provide"
 import { resolveTracked } from "./resolution"
 
@@ -447,9 +448,11 @@ function snapshotDetachedLayers(
 
   return scopes.map((scope) =>
     [...scope.bindings.values()].map((binding) =>
-      binding.spec.kind === "factory"
-        ? provideFactory(binding.stamp.dependency, binding.spec.factory)
-        : provide(binding.stamp.dependency, binding.spec.value),
+      binding.spec.kind === "missing"
+        ? withoutProvider(binding.stamp.dependency)
+        : binding.spec.kind === "factory"
+          ? provideFactory(binding.stamp.dependency, binding.spec.factory)
+          : provide(binding.stamp.dependency, binding.spec.value),
     ),
   )
 }

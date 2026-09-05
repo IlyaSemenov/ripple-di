@@ -4,11 +4,13 @@ import type { Dependency, Provision, Scope } from "ripple-di"
 import {
   CrossRuntimeDependencyError,
   createRuntime,
+  DuplicateProviderError,
   InstallationConflictError,
   MissingProviderError,
   provide,
   provideFactory,
   ScopeClosedError,
+  withoutProvider,
 } from "ripple-di"
 
 describe("runtime instances", () => {
@@ -65,6 +67,67 @@ describe("runtime instances", () => {
     runtime.resolve(useValue)
     await runtime[Symbol.asyncDispose]()
     expect(() => runtime.resolve(useValue)).toThrow(ScopeClosedError)
+  })
+
+  it("isolates provider removal across async callbacks and detached layers", async () => {
+    const runtime = createRuntime()
+    const useTenant = runtime.defineDependency<string>({ name: "tenant" })
+    runtime.install(provide(useTenant, "installed"))
+    const removal = withoutProvider(useTenant)
+
+    await Promise.all([
+      runtime.withOverrides(removal, async () => {
+        await Promise.resolve()
+        expect(() => useTenant()).toThrow(MissingProviderError)
+        await runtime.withDetachedContext(() => {
+          expect(() => useTenant()).toThrow(MissingProviderError)
+        })
+        await runtime.withOverrides(provide(useTenant, "nested"), () =>
+          runtime.withDetachedContext(() => {
+            expect(useTenant()).toBe("nested")
+          }),
+        )
+        expect(() => useTenant()).toThrow(MissingProviderError)
+      }),
+      runtime.withOverrides([], async () => {
+        await Promise.resolve()
+        expect(useTenant()).toBe("installed")
+      }),
+    ])
+    await expect(
+      runtime.withOverrides(removal, () => useTenant()),
+    ).rejects.toBeInstanceOf(MissingProviderError)
+    expect(useTenant()).toBe("installed")
+    await runtime.dispose()
+  })
+
+  it("accepts reusable removal installations and enforces provision boundaries", async () => {
+    const runtime = createRuntime()
+    const foreign = createRuntime()
+    const useValue = runtime.defineDependency(() => "fallback")
+    const removal = withoutProvider(useValue)
+    expect(() => foreign.createScope(removal)).toThrow(
+      CrossRuntimeDependencyError,
+    )
+    expect(() =>
+      runtime.createScope([provide(useValue, "value"), removal]),
+    ).toThrow(DuplicateProviderError)
+    expect(() => runtime.install([removal, removal])).toThrow(
+      DuplicateProviderError,
+    )
+
+    const installation = runtime.install(removal)
+    expect(() => useValue()).toThrow(MissingProviderError)
+    await runtime.withOverrides(provide(useValue, "child"), () => {
+      expect(useValue()).toBe("child")
+    })
+    await installation.close()
+    expect(useValue()).toBe("fallback")
+    const replacement = runtime.install(removal)
+    expect(() => useValue()).toThrow(MissingProviderError)
+    await replacement.close()
+    await runtime.dispose()
+    await foreign.dispose()
   })
 })
 

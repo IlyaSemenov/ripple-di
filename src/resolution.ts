@@ -104,7 +104,7 @@ export function resolveUntracked<T>(
   }
 
   const provider = findEffectiveProvider(requestedScope, node)
-  if (!provider) {
+  if (!provider || provider.spec.kind === "missing") {
     throw new MissingProviderError(
       node.name,
       resolutionPath(asUnknownNode(node)),

@@ -7,9 +7,9 @@ import { type FactoryResult, markedValueOf } from "./value"
 declare const provisionBrand: unique symbol
 
 /**
- * A value or factory prepared for a scope or runtime installation.
+ * A value, factory, or provider removal prepared for a scope or installation.
  *
- * Create provisions with `provide` or `provideFactory`.
+ * Create provisions with `provide`, `provideFactory`, or `withoutProvider`.
  */
 export interface Provision {
   readonly [provisionBrand]: true
@@ -175,4 +175,15 @@ export function provideFactory<T>(
   factory: () => FactoryResult<NoInfer<T>>,
 ): Provision {
   return createProvision(dependency, { kind: "factory", factory })
+}
+
+/**
+ * Makes a dependency unavailable in the receiving scope or installation.
+ *
+ * Reads throw MissingProviderError even when a parent supplies a value or the
+ * dependency has a built-in factory. A child scope can provide it again.
+ * This provision is reusable and does not dispose existing values.
+ */
+export function withoutProvider<T>(dependency: DependencyToken<T>): Provision {
+  return createProvision(dependency, { kind: "missing" })
 }

@@ -29,6 +29,7 @@ import {
   withDetachedContext,
   withDetachedOverrides,
   withOverrides,
+  withoutProvider,
 } from "ripple-di"
 
 import { createQueryBuilder, type QueryBuilder } from "./awaitable"
@@ -82,6 +83,24 @@ describe("consumer site", () => {
     expect("reset" in useDb).toBe(false)
     expect("setFactory" in useDb).toBe(false)
     expect("provide" in useDb).toBe(false)
+  })
+
+  it("accepts dependencies and factory dependencies as provider removals", async () => {
+    const useValue = defineDependency(() => 42)
+    const format = defineFactoryDependency((value: number) => String(value))
+    expectTypeOf(withoutProvider(useValue)).toEqualTypeOf<Provision>()
+    expectTypeOf(withoutProvider(format)).toEqualTypeOf<Provision>()
+    await withOverrides(
+      collectProvisions(withoutProvider(useValue), withoutProvider(format)),
+      () => {
+        expect(() => useValue()).toThrow(MissingProviderError)
+        expect(() => format(42)).toThrow(MissingProviderError)
+      },
+    )
+    expect(useValue()).toBe(42)
+    expect(format(42)).toBe("42")
+    // @ts-expect-error Only a dependency token can be removed.
+    expect(() => withoutProvider(() => 42)).toThrow(TypeError)
   })
 })
 

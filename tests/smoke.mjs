@@ -18,6 +18,7 @@ import {
   provide,
   ScopeClosedError,
   withOverrides,
+  withoutProvider,
 } from "../dist/index.mjs"
 
 const delay = (milliseconds) =>
@@ -195,6 +196,14 @@ async function checkMultipleRuntimes() {
   ])
 }
 
+async function checkWithoutProvider() {
+  await assert.rejects(
+    withOverrides(withoutProvider(useConfig), () => useDb()),
+    MissingProviderError,
+  )
+  assert.equal(useDb().url, "production")
+}
+
 async function checkShutdown() {
   await dispose()
   assert.throws(() => useDb(), ScopeClosedError)
@@ -211,6 +220,7 @@ checkOwnedValueCleanup()
 await checkPromiseHandling()
 await checkAwaitableValue()
 await checkMultipleRuntimes()
+await checkWithoutProvider()
 await checkShutdown()
 
 const runtimeName = globalThis.Bun

@@ -68,6 +68,7 @@ The package is published as ESM.
 | Supply the application's values at startup    | `install` with `provide` or `provideFactory`
 | Collect provisions from several modules       | `collectProvisions`
 | Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
+| Make a dependency unavailable                 | `withoutProvider`
 | Memoize a getter or zero-argument method      | `@memo`
 | Keep one scope open across several operations | `createScope`
 | Continue every current override layer         | `withDetachedContext`
@@ -154,6 +155,18 @@ const [leftUsers, rightUsers] = await Promise.all([
   withOverrides(provide(useConfig, rightConfig), () => loadUsers()),
 ])
 ```
+
+### Make a dependency unavailable
+
+Use `withoutProvider` to test behavior when a dependency is missing, even if your test setup already provides it.
+
+```ts
+import { withoutProvider, withOverrides } from "ripple-di"
+
+await withOverrides(withoutProvider(useTenant), () => processRequest())
+```
+
+Reading `useTenant()` inside the callback throws `MissingProviderError`, even if it has an inherited provider or built-in factory.
 
 ### Awaitable callback results
 
@@ -530,6 +543,9 @@ await dispose()
 
 The installed factory is lazy, and its queue client is closed either with the installation during a controlled replacement or with the runtime at application shutdown.
 
+[`withoutProvider`](#make-a-dependency-unavailable) is a reusable provision accepted wherever `provide` is accepted, including installations and override runners.
+It hides existing values without disposing them, and a nested scope can supply the dependency again with `provide` or `provideFactory`.
+
 ### Manage a scope explicitly
 
 Use `withOverrides` when one callback covers the whole lifetime.
@@ -573,8 +589,11 @@ trackBackgroundTask(backgroundTask)
 ```
 
 It reproduces those layers in new scopes without copying cached dependency values.
-Borrowed values keep their identity, while factory provisions run again and their results belong to the new scopes.
-If a layer owns an existing provided value, the call rejects with `DetachedContextOwnedProvisionError` because the value cannot belong to both contexts.
+
+- Borrowed values keep their identity.
+- Factory provisions run again, and their results belong to the new scopes.
+- Provider removals made with `withoutProvider` are preserved.
+- If a layer owns an existing provided value, the call rejects with `DetachedContextOwnedProvisionError` because the value cannot belong to both contexts.
 
 Use `withDetachedOverrides` when the work should receive only selected values, especially across a security-sensitive boundary:
 

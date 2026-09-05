@@ -12,6 +12,9 @@ export const scopeParent = Symbol("scope-parent")
 /** Pure provider recipe that has not yet been installed in a scope. */
 export type ProviderSpec<T> =
   | {
+      readonly kind: "missing"
+    }
+  | {
       readonly kind: "value"
       readonly value: T
     }

@@ -12,8 +12,10 @@ import {
   FactoryError,
   FactoryScopeOperationError,
   MissingProviderError,
+  memoize,
   provide,
   provideFactory,
+  withoutProvider,
 } from "ripple-di"
 
 import { createQueryBuilder, type QueryBuilder } from "./awaitable"
@@ -782,6 +784,104 @@ describe("resolution and tracking", () => {
     expect(() => runtime.resolve(useConsumer)).toThrow(FactoryError)
     expect(() => runtime.resolve(useConsumer)).toThrow(FactoryError)
     expect(consumerCalls).toBe(2)
+    await runtime.dispose()
+  })
+
+  it("blocks cached fallback values and rebuilds consumers with the real error path", async () => {
+    const runtime = createRuntime()
+    const disposed: string[] = []
+    let tenantCalls = 0
+    let serviceCalls = 0
+    const useTenant = runtime.defineDependency(
+      () => {
+        tenantCalls += 1
+        return "tenant"
+      },
+      {
+        name: "tenant",
+        dispose: (tenant) => {
+          disposed.push(tenant)
+        },
+      },
+    )
+    const useService = runtime.defineDependency(
+      () => {
+        serviceCalls += 1
+        return { tenant: useTenant() }
+      },
+      { name: "service" },
+    )
+    const useHandler = runtime.defineDependency(
+      () => ({ service: useService() }),
+      { name: "handler" },
+    )
+    const useDb = runtime.defineDependency(() => ({}))
+    const handler = useHandler()
+    const db = useDb()
+    const tenantMemo = memoize(() => useTenant())
+    expect(tenantMemo()).toBe("tenant")
+
+    await runtime.withOverrides(withoutProvider(useTenant), (scope) => {
+      expect(() => scope.resolve(useTenant)).toThrow(MissingProviderError)
+      expect(() => tenantMemo()).toThrow(MissingProviderError)
+      expect(() => useHandler()).toThrow(
+        new MissingProviderError("tenant", ["handler", "service", "tenant"]),
+      )
+      expect(useDb()).toBe(db)
+    })
+
+    expect(serviceCalls).toBeGreaterThan(1)
+    expect(tenantCalls).toBe(1)
+    expect(disposed).toEqual([])
+    expect(useHandler()).toBe(handler)
+    expect(tenantMemo()).toBe("tenant")
+    await runtime.dispose()
+    expect(disposed).toEqual(["tenant"])
+  })
+
+  it("does not call an unread fallback or parent override factory", async () => {
+    const runtime = createRuntime()
+    let calls = 0
+    const factory = () => ++calls
+    const useValue = runtime.defineDependency(factory)
+    const removal = withoutProvider(useValue)
+
+    await runtime.withOverrides(removal, () => {
+      expect(() => useValue()).toThrow(MissingProviderError)
+    })
+    await runtime.withOverrides(provideFactory(useValue, factory), () =>
+      runtime.withOverrides(removal, () => {
+        expect(() => useValue()).toThrow(MissingProviderError)
+      }),
+    )
+    expect(calls).toBe(0)
+    await runtime.dispose()
+  })
+
+  it("keeps values that handle a blocked read local to their scope", async () => {
+    const runtime = createRuntime()
+    const useTenant = runtime.defineDependency(() => "tenant")
+    const useOptional = runtime.defineDependency(() => {
+      try {
+        return { tenant: useTenant() }
+      } catch (error) {
+        if (!(error instanceof MissingProviderError)) throw error
+        return { tenant: undefined }
+      }
+    })
+    const original = useOptional()
+    await runtime.withOverrides(withoutProvider(useTenant), async () => {
+      const anonymous = useOptional()
+      expect(anonymous.tenant).toBeUndefined()
+      await runtime.withOverrides([], () => {
+        expect(useOptional()).not.toBe(anonymous)
+      })
+      await runtime.withOverrides(provide(useTenant, "child"), () => {
+        expect(useOptional().tenant).toBe("child")
+      })
+      expect(useOptional()).toBe(anonymous)
+    })
+    expect(useOptional()).toBe(original)
     await runtime.dispose()
   })
 })

@@ -19,7 +19,12 @@ export type {
   ProvisionCollectionInput,
   ProvisionInput,
 } from "./provide"
-export { collectProvisions, provide, provideFactory } from "./provide"
+export {
+  collectProvisions,
+  provide,
+  provideFactory,
+  withoutProvider,
+} from "./provide"
 export * from "./runtime"
 export type { Scope, ScopeState } from "./scope"
 export type { AsValue, FactoryResult } from "./value"
