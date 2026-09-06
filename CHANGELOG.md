@@ -1,5 +1,11 @@
 # ripple-di
 
+## 3.1.0
+
+### Minor Changes
+
+- d338d2b: Add cancellation support to `createDetachedStream` through an optional `{ signal }` and a signal passed to `open`.
+
 ## 3.0.0
 
 ### Major Changes
