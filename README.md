@@ -628,23 +628,48 @@ A subscription opened inside a request would therefore read dependencies after t
 `createDetachedStream` opens such a source inside a detached context and keeps that context for every read until the reader is done:
 
 ```ts
+import { setTimeout as delay } from "node:timers/promises"
 import { createDetachedStream } from "ripple-di"
 
 function subscribeToOrders(signal: AbortSignal) {
-  return createDetachedStream(async function* () {
-    const db = useDb()
-    while (!signal.aborted) {
-      yield* await db.query("select * from order_events")
-      await delay(1_000)
-    }
-  })
+  return createDetachedStream(
+    async function* (scope, signal) {
+      const db = useDb()
+      while (!signal.aborted) {
+        // Without signal support, cancellation waits for the query to finish.
+        yield* await db.query("select * from order_events")
+        // With signal support, cancellation interrupts the delay.
+        await delay(1_000, undefined, { signal })
+      }
+    },
+    { signal },
+  )
 }
 ```
 
 - The `open` callback runs immediately inside the detached scopes, so anything it subscribes to before returning the source is in place when `createDetachedStream` returns.
+  Its second argument is a signal owned by the stream; an already aborted external signal reaches `open` already aborted too.
 - Every `next()`, `return()`, and `throw()` runs inside the detached scopes.
 - The scopes close when the source finishes, when a read fails, or when the reader calls `return()`, which `for await` and `await using` do for you.
-- A stream nobody reads keeps its scopes open until `return()` or `Symbol.asyncDispose` closes it.
+- External cancellation, `return()`, and `Symbol.asyncDispose` immediately abort the stream's signal and stop new reads, then wait for source cleanup before releasing the scopes.
+  The source's `finally` can still read dependencies during that cleanup.
+- The stream's signal also aborts when the source finishes or fails.
+  A `throw()` that the source recovers from leaves the signal and scopes active.
+- External cancellation closes even a stream nobody has read; without cancellation, an unread stream stays open until explicitly closed.
+- After cancellation starts, new `next()` calls return `{ done: true, value: undefined }` immediately.
+  An already pending read still delivers its successful value or reports errors other than recognized cancellation.
+  Await `return()` or `Symbol.asyncDispose` to wait for cleanup and observe its failures after external cancellation.
+
+Errors from source reads and `return()` become normal completion only when the signal passed to `open` is aborted and the error is either that signal's `reason` or has `name === "AbortError"`.
+The source does not need to catch those cancellation errors itself.
+All other source errors, including errors from `finally`, and every dependency cleanup error remain observable.
+
+Operations without signal support work normally, but cancellation waits for them to finish.
+Pass the signal from `open` to operations that need to stop promptly; an uninterruptible wait can keep `return()` and cleanup pending indefinitely.
+Use `return()` to cancel a parked source; `throw()` forwards an error that the source may recover from and does not interrupt its waits.
+
+The signal passed to `open` means that the stream is closing, whether because of external cancellation, the reader leaving, or source completion.
+If the source needs to distinguish external cancellation from other causes, capture the external signal separately and check it directly.
 
 ### Name an override you write repeatedly
 

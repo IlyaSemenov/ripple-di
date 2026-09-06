@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import { setTimeout as abortableDelay } from "node:timers/promises"
 
 import type { Scope } from "ripple-di"
 import {
@@ -606,10 +607,12 @@ describe("detached stream", () => {
     const runtime = createRuntime()
     const useLocale = runtime.defineDependency<string>({ name: "locale" })
     const signal = new Error("stop")
+    let streamSignal!: AbortSignal
     let caughtIn: string | undefined
 
     const stream = await runtime.withOverrides(provide(useLocale, "de"), () =>
-      runtime.createDetachedStream(async function* () {
+      runtime.createDetachedStream(async function* (_scope, lifecycleSignal) {
+        streamSignal = lifecycleSignal
         try {
           yield "reading"
         } catch (error) {
@@ -623,7 +626,9 @@ describe("detached stream", () => {
     expect((await reader.next()).value).toBe("reading")
     expect((await reader.throw?.(signal))?.value).toBe("recovered")
     expect(caughtIn).toBe("de:stop")
+    expect(streamSignal.aborted).toBe(false)
     expect(await reader.next()).toEqual({ done: true, value: undefined })
+    expect(streamSignal.aborted).toBe(true)
     await runtime.dispose()
   })
 
@@ -772,6 +777,494 @@ describe("detached stream", () => {
       ScopeClosedError,
     )
     expect(await reader.return?.()).toEqual({ done: true, value: undefined })
+    await runtime.dispose()
+  })
+})
+
+describe("detached stream cancellation", () => {
+  it.each(["before opening", "during opening", "before reading"])(
+    "closes an unread source when cancelled %s",
+    async (timing) => {
+      const runtime = createRuntime()
+      const controller = new AbortController()
+      const reason = new Error("request cancelled")
+      let disposed = 0
+      let notifyDisposed!: () => void
+      const disposal = new Promise<void>((resolve) => {
+        notifyDisposed = resolve
+      })
+      const useConnection = runtime.defineDependency<object>({
+        dispose: () => {
+          disposed += 1
+          notifyDisposed()
+        },
+      })
+      let streamSignal!: AbortSignal
+      let started = false
+      if (timing === "before opening") controller.abort(reason)
+
+      const stream = await runtime.withOverrides(
+        provideFactory(useConnection, () => ({})),
+        () =>
+          runtime.createDetachedStream(
+            (_scope, signal) => {
+              streamSignal = signal
+              expect(signal.aborted).toBe(timing === "before opening")
+              useConnection()
+              if (timing === "during opening") {
+                controller.abort(reason)
+                expect(signal.aborted).toBe(true)
+              }
+              return (async function* () {
+                started = true
+                yield "unreachable"
+              })()
+            },
+            { signal: controller.signal },
+          ),
+      )
+      if (timing === "before reading") controller.abort(reason)
+
+      // Cleanup must start without a next(), return(), or asyncDispose call.
+      await disposal
+      expect(streamSignal.aborted).toBe(true)
+      expect(streamSignal.reason).toBe(reason)
+      expect(started).toBe(false)
+      const reader = stream[Symbol.asyncIterator]()
+      expect(await reader.next()).toEqual({ done: true, value: undefined })
+      await reader.return?.()
+      await stream[Symbol.asyncDispose]()
+      expect(disposed).toBe(1)
+      const installation = runtime.install([])
+      await installation.close()
+      await runtime.dispose()
+      expect(disposed).toBe(1)
+    },
+  )
+
+  it.each(["external", "return", "asyncDispose"])(
+    "interrupts a parked generator through %s and keeps its finally scope alive",
+    async (method) => {
+      const runtime = createRuntime()
+      const controller = new AbortController()
+      let disposed = 0
+      const useConnection = runtime.defineDependency<object>({
+        dispose: () => {
+          disposed += 1
+        },
+      })
+      let notifyWaiting!: () => void
+      const waiting = new Promise<void>((resolve) => {
+        notifyWaiting = resolve
+      })
+      let notifyFinalizing!: () => void
+      const finalizing = new Promise<void>((resolve) => {
+        notifyFinalizing = resolve
+      })
+      let completeFinalization!: () => void
+      const finalization = new Promise<void>((resolve) => {
+        completeFinalization = resolve
+      })
+      let finalized = 0
+      let streamSignal!: AbortSignal
+
+      const stream = await runtime.withOverrides(
+        provideFactory(useConnection, () => ({})),
+        () =>
+          runtime.createDetachedStream(
+            async function* (_scope, signal) {
+              streamSignal = signal
+              const connection = useConnection()
+              try {
+                yield "ready"
+                const wait = abortableDelay(60_000, undefined, { signal })
+                notifyWaiting()
+                await wait
+              } finally {
+                notifyFinalizing()
+                await finalization
+                expect(useConnection()).toBe(connection)
+                expect(disposed).toBe(0)
+                finalized += 1
+              }
+            },
+            { signal: controller.signal },
+          ),
+      )
+      const reader = stream[Symbol.asyncIterator]()
+      expect((await reader.next()).value).toBe("ready")
+      const pendingRead = reader.next()
+      await waiting
+      let reentrantClose:
+        | ReturnType<NonNullable<typeof reader.return>>
+        | undefined
+      streamSignal.addEventListener(
+        "abort",
+        () => {
+          reentrantClose = reader.return?.()
+        },
+        { once: true },
+      )
+
+      const closing =
+        method === "external"
+          ? controller.abort()
+          : method === "return"
+            ? reader.return?.()
+            : stream[Symbol.asyncDispose]()
+      expect(streamSignal.aborted).toBe(true)
+      expect(await reader.next()).toEqual({ done: true, value: undefined })
+      await finalizing
+      expect(disposed).toBe(0)
+      completeFinalization()
+      expect(await pendingRead).toEqual({ done: true, value: undefined })
+      await closing
+      await reentrantClose
+      await stream[Symbol.asyncDispose]()
+      expect(finalized).toBe(1)
+      expect(disposed).toBe(1)
+      await runtime.dispose()
+      expect(disposed).toBe(1)
+    },
+  )
+
+  it("delivers an in-flight value and waits for a custom iterator's pending read", async () => {
+    const runtime = createRuntime()
+    const controller = new AbortController()
+    let disposed = 0
+    const useConnection = runtime.defineDependency<object>({
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    let unblockRead!: () => void
+    const readGate = new Promise<void>((resolve) => {
+      unblockRead = resolve
+    })
+    let notifyReturned!: () => void
+    const returned = new Promise<void>((resolve) => {
+      notifyReturned = resolve
+    })
+    let reads = 0
+    let returns = 0
+    const stream = await runtime.withOverrides(
+      provideFactory(useConnection, () => ({})),
+      () =>
+        runtime.createDetachedStream(
+          () => {
+            const connection = useConnection()
+            return {
+              [Symbol.asyncIterator]: () => ({
+                next: async () => {
+                  reads += 1
+                  await readGate
+                  expect(useConnection()).toBe(connection)
+                  expect(disposed).toBe(0)
+                  return { done: false as const, value: "last value" }
+                },
+                return: async () => {
+                  returns += 1
+                  notifyReturned()
+                  return { done: true as const, value: undefined }
+                },
+              }),
+            }
+          },
+          { signal: controller.signal },
+        ),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+    const pendingRead = reader.next()
+    controller.abort()
+    const closing = reader.return?.()
+    await returned
+    expect(disposed).toBe(0)
+    expect(await reader.next()).toEqual({ done: true, value: undefined })
+    unblockRead()
+    expect(await pendingRead).toEqual({ done: false, value: "last value" })
+    await closing
+    await stream[Symbol.asyncDispose]()
+    expect(reads).toBe(1)
+    expect(returns).toBe(1)
+    expect(disposed).toBe(1)
+    await runtime.dispose()
+  })
+
+  it("keeps resources until a non-cooperative generator is unblocked", async () => {
+    const runtime = createRuntime()
+    let disposed = 0
+    const useConnection = runtime.defineDependency<object>({
+      dispose: () => {
+        disposed += 1
+      },
+    })
+    let unblock!: () => void
+    const gate = new Promise<void>((resolve) => {
+      unblock = resolve
+    })
+    let notifyWaiting!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      notifyWaiting = resolve
+    })
+    let finalized = false
+    const stream = await runtime.withOverrides(
+      provideFactory(useConnection, () => ({})),
+      () =>
+        runtime.createDetachedStream(async function* () {
+          const connection = useConnection()
+          try {
+            notifyWaiting()
+            await gate
+            yield "unblocked"
+          } finally {
+            expect(useConnection()).toBe(connection)
+            expect(disposed).toBe(0)
+            finalized = true
+          }
+        }),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+    const pendingRead = reader.next()
+    await waiting
+    let closed = false
+    const closing = reader.return?.().then(() => {
+      closed = true
+    })
+    expect(await reader.next()).toEqual({ done: true, value: undefined })
+    expect(closed).toBe(false)
+    expect(finalized).toBe(false)
+    expect(disposed).toBe(0)
+    unblock()
+    expect((await pendingRead).value).toBe("unblocked")
+    await closing
+    expect(finalized).toBe(true)
+    expect(disposed).toBe(1)
+    await runtime.dispose()
+  })
+
+  it.each(["next", "throw"])(
+    "cancels the signal when an uncaught %s failure ends the source",
+    async (method) => {
+      const runtime = createRuntime()
+      let disposed = 0
+      const useConnection = runtime.defineDependency<object>({
+        dispose: () => {
+          disposed += 1
+        },
+      })
+      const failure = new Error("source failed")
+      let streamSignal!: AbortSignal
+      const stream = await runtime.withOverrides(
+        provideFactory(useConnection, () => ({})),
+        () =>
+          runtime.createDetachedStream(async function* (_scope, signal) {
+            streamSignal = signal
+            const connection = useConnection()
+            try {
+              yield "ready"
+              throw failure
+            } finally {
+              expect(useConnection()).toBe(connection)
+              expect(disposed).toBe(0)
+            }
+          }),
+      )
+      const reader = stream[Symbol.asyncIterator]()
+      await reader.next()
+      await expect(
+        method === "next" ? reader.next() : reader.throw?.(failure),
+      ).rejects.toBe(failure)
+      expect(streamSignal.aborted).toBe(true)
+      expect(disposed).toBe(1)
+      expect(await reader.next()).toEqual({ done: true, value: undefined })
+      await runtime.dispose()
+    },
+  )
+
+  it("completes an outstanding read on an uncaught cancellation error", async () => {
+    const runtime = createRuntime()
+    const controller = new AbortController()
+    let notifyWaiting!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      notifyWaiting = resolve
+    })
+    const stream = runtime.createDetachedStream(
+      async function* (_scope, signal) {
+        const wait = abortableDelay(60_000, undefined, { signal })
+        notifyWaiting()
+        await wait
+        yield "unreachable"
+      },
+      { signal: controller.signal },
+    )
+    const reader = stream[Symbol.asyncIterator]()
+    const pendingRead = reader.next()
+    await waiting
+    controller.abort()
+    expect(await pendingRead).toEqual({ done: true, value: undefined })
+    expect(await reader.return?.()).toEqual({ done: true, value: undefined })
+    await stream[Symbol.asyncDispose]()
+    expect(await reader.next()).toEqual({ done: true, value: undefined })
+    await runtime.dispose()
+  })
+
+  it.each([new Error("request cancelled"), "custom reason", null])(
+    "recognizes a custom cancellation reason in both next() and return(): %p",
+    async (reason) => {
+      const runtime = createRuntime()
+      const controller = new AbortController()
+      let disposed = 0
+      const useConnection = runtime.defineDependency<object>({
+        dispose: () => {
+          disposed += 1
+        },
+      })
+      const stream = await runtime.withOverrides(
+        provideFactory(useConnection, () => ({})),
+        () =>
+          runtime.createDetachedStream(
+            (_scope, signal) => {
+              useConnection()
+              return {
+                [Symbol.asyncIterator]: () => ({
+                  next: () =>
+                    new Promise<IteratorResult<never>>((_resolve, reject) => {
+                      signal.addEventListener(
+                        "abort",
+                        () => reject(signal.reason),
+                        { once: true },
+                      )
+                    }),
+                  return: async () => {
+                    signal.throwIfAborted()
+                    return { done: true as const, value: undefined }
+                  },
+                }),
+              }
+            },
+            { signal: controller.signal },
+          ),
+      )
+      const reader = stream[Symbol.asyncIterator]()
+      const pendingRead = reader.next()
+      controller.abort(reason)
+      expect(await pendingRead).toEqual({ done: true, value: undefined })
+      expect(await reader.return?.()).toEqual({ done: true, value: undefined })
+      expect(disposed).toBe(1)
+      await runtime.dispose()
+    },
+  )
+
+  it("recognizes a primitive's AbortError thrown by source.return()", async () => {
+    const runtime = createRuntime()
+    const stream = runtime.createDetachedStream(
+      async function* (_scope, signal) {
+        try {
+          yield "ready"
+        } finally {
+          await abortableDelay(60_000, undefined, { signal })
+        }
+      },
+    )
+    const reader = stream[Symbol.asyncIterator]()
+    await reader.next()
+    expect(await reader.return?.()).toEqual({ done: true, value: undefined })
+    await runtime.dispose()
+  })
+
+  it("preserves an AbortError when no cancellation was requested", async () => {
+    const runtime = createRuntime()
+    const failure = new DOMException("source failed", "AbortError")
+    const stream = runtime.createDetachedStream(() => ({
+      [Symbol.asyncIterator]: () => ({
+        next: async () => {
+          throw failure
+        },
+      }),
+    }))
+    const reader = stream[Symbol.asyncIterator]()
+    await expect(reader.next()).rejects.toBe(failure)
+    expect(await reader.next()).toEqual({ done: true, value: undefined })
+    await runtime.dispose()
+  })
+
+  it.each(["read", "finally"])(
+    "preserves a real %s error from an outstanding read during cancellation",
+    async (stage) => {
+      const runtime = createRuntime()
+      const controller = new AbortController()
+      const failure = new Error("source failed")
+      const stream = runtime.createDetachedStream(
+        async function* (_scope, signal) {
+          try {
+            await new Promise<void>((resolve) => {
+              signal.addEventListener("abort", () => resolve(), { once: true })
+            })
+            if (stage === "read") throw failure
+          } finally {
+            // biome-ignore lint/correctness/noUnsafeFinally: preserving a source finalization failure is the subject under test.
+            if (stage === "finally") throw failure
+          }
+        },
+        { signal: controller.signal },
+      )
+      const reader = stream[Symbol.asyncIterator]()
+      const pendingRead = reader.next()
+      controller.abort()
+      await expect(pendingRead).rejects.toBe(failure)
+      await reader.return?.()
+      await runtime.dispose()
+    },
+  )
+
+  it("reports background source cleanup and disposal failures through explicit close", async () => {
+    const runtime = createRuntime()
+    const controller = new AbortController()
+    const sourceFailure = new Error("source cleanup failed")
+    const disposalFailure = new DOMException("disposal failed", "AbortError")
+    let disposed = 0
+    let notifyDisposed!: () => void
+    const disposal = new Promise<void>((resolve) => {
+      notifyDisposed = resolve
+    })
+    const useConnection = runtime.defineDependency<object>({
+      dispose: () => {
+        disposed += 1
+        notifyDisposed()
+        throw disposalFailure
+      },
+    })
+    const stream = await runtime.withOverrides(
+      provideFactory(useConnection, () => ({})),
+      () =>
+        runtime.createDetachedStream(
+          async function* () {
+            useConnection()
+            try {
+              yield "ready"
+            } finally {
+              // biome-ignore lint/correctness/noUnsafeFinally: aggregating source finalization and disposal failures is the subject under test.
+              throw sourceFailure
+            }
+          },
+          { signal: controller.signal },
+        ),
+    )
+    const reader = stream[Symbol.asyncIterator]()
+    await reader.next()
+    controller.abort(disposalFailure)
+    await disposal
+    const error = await Promise.resolve(stream[Symbol.asyncDispose]()).catch(
+      (error: unknown) => error,
+    )
+    expect(error).toBeInstanceOf(AggregateError)
+    expect((error as AggregateError).errors).toEqual([
+      sourceFailure,
+      disposalFailure,
+    ])
+    await expect(reader.return?.()).rejects.toBe(error)
+    expect(await reader.next()).toEqual({ done: true, value: undefined })
+    expect(disposed).toBe(1)
     await runtime.dispose()
   })
 })

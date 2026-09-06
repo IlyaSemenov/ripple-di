@@ -118,8 +118,12 @@ Factory-created values are reused whenever their provider and recorded dependenc
   Require the current ambient scope to be active, but allow retiring ancestors that still serve an active descendant.
   `runDetached` rejects a callback result that is a generator object with `TypeError`; do not replace that check with a structural `Symbol.asyncIterator` check.
   `createDetachedStream` throws snapshot failures synchronously before creating scopes, runs the `open` callback synchronously inside the innermost reproduced scope, runs every iterator step there, and closes the scopes when the source finishes, a read fails, or the reader calls `return()`.
-  A `throw()` that the source survives keeps the scopes open.
-  Source failures reach the reader through the iterator; `return()` on a force-closed stream skips the source, and teardown failures still reach the reader.
+  External cancellation, `return()`, and source completion or failure abort the stream's signal; a recovered `throw()` keeps both the signal and scopes active.
+  Cancellation stops new reads even before the first read or during `open`, while pending operations and source finalization retain their scopes until they settle.
+  Concurrent close requests share one cleanup, and successful reads already in progress remain deliverable.
+  Treat source read and `return()` failures as cancellation only when the internal signal is already aborted and the error equals its `reason` or has `name === "AbortError"`.
+  Preserve all other source failures and every dependency teardown error, including background cleanup failures observed through `return()` or `Symbol.asyncDispose`.
+  `return()` on a force-closed stream skips the source, and teardown failures still reach the reader.
 - Name the type parameter of a callback-based API `TCallbackResult` and infer it from the callback's own return type, whether or not the API awaits it.
   Declare an awaited result as `Promise<Awaited<TCallbackResult>>` instead of declaring the callback as returning `TCallbackResult | Promise<TCallbackResult>`, and do not export an alias for that form.
 - Do not add live mutation, signal effects, async resolution, previous-binding decorators, or cross-scope factory reads to the core API.

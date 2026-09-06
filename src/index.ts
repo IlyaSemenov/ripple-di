@@ -6,7 +6,7 @@ export type {
   FactoryDependency,
   FactoryDependencyOptions,
 } from "./dependency"
-export type { DetachedStream } from "./detached"
+export type { DetachedStream, DetachedStreamOptions } from "./detached"
 export * from "./errors"
 export { memo, memoize } from "./memo"
 export type {

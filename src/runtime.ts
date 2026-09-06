@@ -16,6 +16,7 @@ import {
 import {
   createDetachedScopeStream,
   type DetachedStream,
+  type DetachedStreamOptions,
   runDetachedScopeContext,
 } from "./detached"
 import {
@@ -155,9 +156,23 @@ export interface Runtime extends AsyncDisposable {
    * Opens an async source inside the current dependency context and keeps
    * that context for every read until the source finishes or the reader
    * closes the stream.
+   *
+   * Pass the signal from `open` to operations that need to stop promptly;
+   * cancellation waits for operations without signal support to finish.
+   * External cancellation and `return()` abort that signal immediately and
+   * keep the scopes open until the source finishes cleanup.
+   * A `throw()` that the source recovers from does not cancel the signal.
+   * Source completion or failure also aborts the signal.
+   * New reads after cancellation return `done`; pending reads keep their
+   * values or non-cancellation errors.
+   * A source error from a read or `return()` becomes `done` only when the
+   * signal is aborted and the error equals `signal.reason` or has name `AbortError`.
+   * All other source errors and every dependency cleanup error remain observable.
+   * Await `return()` or `Symbol.asyncDispose` to observe background cleanup failures.
    */
   createDetachedStream<T>(
-    open: (scope: Scope) => AsyncIterable<T>,
+    open: (scope: Scope, signal: AbortSignal) => AsyncIterable<T>,
+    options?: DetachedStreamOptions,
   ): DetachedStream<T>
 
   /**
@@ -350,13 +365,15 @@ class RuntimeImpl implements RuntimeContext {
   }
 
   createDetachedStream<T>(
-    open: (scope: Scope) => AsyncIterable<T>,
+    open: (scope: Scope, signal: AbortSignal) => AsyncIterable<T>,
+    options?: DetachedStreamOptions,
   ): DetachedStream<T> {
     this.assertScopeManagementAllowed("Runtime.createDetachedStream")
     return createDetachedScopeStream(
       this.baseScope(),
       this.currentAmbientScope(),
       open,
+      options,
     )
   }
 
@@ -636,11 +653,27 @@ export function runDetached<TCallbackResult>(
  * The source is opened immediately inside reproduced override layers, each
  * read runs inside them, and they are cleaned up when the source finishes or
  * the reader closes the stream.
+ * External cancellation starts closing even an unread stream.
+ *
+ * Pass the signal from `open` to operations that need to stop promptly.
+ * Cancellation waits for operations without signal support to finish;
+ * an uninterruptible wait can keep cleanup pending indefinitely.
+ * External cancellation and `return()` abort that signal immediately, stop
+ * new reads, and keep the scopes open until source cleanup finishes.
+ * The signal also aborts when the source finishes or fails, but remains
+ * active after a `throw()` that the source recovers from.
+ * After external cancellation, await `return()` or `Symbol.asyncDispose`
+ * to observe cleanup failures; new reads return `done` immediately.
+ * A source error from a read or `return()` becomes `done` only when the
+ * signal is aborted and the error equals `signal.reason` or has name `AbortError`.
+ * All other source errors and every dependency cleanup error remain observable.
+ * Successful values from reads already in progress are preserved.
  */
 export function createDetachedStream<T>(
-  open: (scope: Scope) => AsyncIterable<T>,
+  open: (scope: Scope, signal: AbortSignal) => AsyncIterable<T>,
+  options?: DetachedStreamOptions,
 ): DetachedStream<T> {
-  return globalRuntime.createDetachedStream(open)
+  return globalRuntime.createDetachedStream(open, options)
 }
 
 /**

@@ -121,6 +121,12 @@ async function replayDetachedLayers<TCallbackResult>(
  */
 export type DetachedStream<T> = AsyncIterable<T> & AsyncDisposable
 
+/** Controls cancellation of a detached stream. */
+export interface DetachedStreamOptions {
+  /** Cancels the source and starts cleanup even if the stream has never been read. */
+  signal?: AbortSignal
+}
+
 /**
  * Opens an async source inside reproduced scope layers that stay open until
  * the reader is done with it.
@@ -132,7 +138,8 @@ export type DetachedStream<T> = AsyncIterable<T> & AsyncDisposable
 export function createDetachedScopeStream<T>(
   base: ScopeContext,
   current: ScopeContext,
-  open: (scope: ScopeContext) => AsyncIterable<T>,
+  open: (scope: ScopeContext, signal: AbortSignal) => AsyncIterable<T>,
+  { signal }: DetachedStreamOptions = {},
 ): DetachedStream<T> {
   const layers = snapshotDetachedLayers(
     base,
@@ -146,31 +153,44 @@ export function createDetachedScopeStream<T>(
   }
   const failureMessage = `Errors in detached stream "${innermost.name}".`
 
+  const controller = new AbortController()
   let source: AsyncIterator<T>
-  try {
-    source = innermost.run(() => open(innermost)[Symbol.asyncIterator]())
-  } catch (error) {
-    // Nobody receives the stream, so teardown failures can only surface as
-    // unhandled rejections.
-    const errors: unknown[] = []
-    void closeTemporaryScopes(outermost, innermost, errors).then(() =>
-      throwCollected(errors, failureMessage),
-    )
-    throw error
-  }
-
+  let opened = false
+  let stopped = false
   const finished: IteratorResult<T, undefined> = {
     done: true,
     value: undefined,
   }
   let closing: Promise<void> | undefined
+  let finishing: Promise<IteratorResult<T, undefined>> | undefined
+  const pending = new Set<Promise<IteratorResult<T>>>()
+
+  /** Stops new reads before notifying cancellation listeners, which may reenter the stream. */
+  function stop(reason?: unknown): void {
+    stopped = true
+    signal?.removeEventListener("abort", onAbort)
+    controller.abort(reason)
+  }
+
+  /** Recognizes source cancellation before cleanup itself aborts the signal. */
+  function isCancellation(error: unknown): boolean {
+    const { signal } = controller
+    // Node primitives can throw their own AbortError instead of signal.reason.
+    return (
+      signal.aborted &&
+      (error === signal.reason ||
+        (error as { name?: unknown } | null | undefined)?.name === "AbortError")
+    )
+  }
 
   function close(): Promise<void> {
-    closing ??= (async () => {
+    // Publish the shared cleanup promise before notifying application code.
+    closing ??= Promise.resolve().then(async () => {
       const errors: unknown[] = []
       await closeTemporaryScopes(outermost, innermost, errors)
       throwCollected(errors, failureMessage)
-    })()
+    })
+    stop()
     return closing
   }
 
@@ -191,41 +211,82 @@ export function createDetachedScopeStream<T>(
   async function advance(
     operation: () => Promise<IteratorResult<T>>,
   ): Promise<IteratorResult<T, undefined>> {
-    let result: IteratorResult<T>
+    let result: IteratorResult<T> = finished
+    const errors: unknown[] = []
     try {
-      result = await innermost.run(operation)
+      const step = innermost.run(operation)
+      pending.add(step)
+      try {
+        result = await step
+      } finally {
+        pending.delete(step)
+      }
     } catch (error) {
-      return release([error])
+      if (!isCancellation(error)) errors.push(error)
     }
-    return result.done ? release([]) : result
+
+    // Cancellation owns cleanup until return() and all outstanding source
+    // operations settle; a concurrent next() must not dispose their resources.
+    if (finishing) {
+      try {
+        await finishing
+      } catch (error) {
+        collectError(errors, error)
+      }
+      throwCollected(errors, failureMessage)
+      // A read started before cancellation still delivers its successful value.
+      return result.done ? finished : result
+    }
+    return errors.length > 0 || result.done ? release(errors) : result
   }
 
-  /** Closes the source in its scope, then releases the scopes. */
-  async function finish(): Promise<IteratorResult<T, undefined>> {
+  /** Cancels reads, waits for source finalization in its scope, then releases the scopes. */
+  function finish(reason?: unknown): Promise<IteratorResult<T, undefined>> {
+    if (finishing) {
+      return finishing
+    }
     if (closing) {
       return closing.then(
         () => finished,
         () => finished,
       )
     }
-    const errors: unknown[] = []
-    // A force-closed scope cannot run the source's cleanup any more.
-    if (innermost.state === "active") {
-      try {
-        await innermost.run(() => source.return?.())
-      } catch (error) {
-        errors.push(error)
+    // Assign before aborting: abort listeners can call return() recursively.
+    finishing = Promise.resolve().then(async () => {
+      const errors: unknown[] = []
+      // A force-closed scope cannot run the source's cleanup any more.
+      if (innermost.state === "active") {
+        try {
+          await innermost.run(() => source.return?.())
+        } catch (error) {
+          if (!isCancellation(error)) errors.push(error)
+        }
+        // Custom iterators need not serialize return() behind pending reads.
+        // Their non-cancellation failures remain observable through the corresponding calls.
+        await Promise.allSettled(pending)
       }
+      return release(errors)
+    })
+    stop(reason)
+    return finishing
+  }
+
+  /** Starts cancellation without an awaiting caller; return/asyncDispose observes its errors. */
+  function onAbort(): void {
+    if (opened) {
+      void finish(signal?.reason).catch(() => {})
+    } else {
+      // Cancellation may happen before or synchronously inside open().
+      stop(signal?.reason)
     }
-    return release(errors)
   }
 
   const stream: AsyncIterator<T, undefined> & DetachedStream<T> = {
     next: () =>
-      closing ? Promise.resolve(finished) : advance(() => source.next()),
-    return: finish,
+      stopped ? Promise.resolve(finished) : advance(() => source.next()),
+    return: () => finish(),
     throw: (error) =>
-      closing
+      stopped
         ? Promise.reject(error)
         : advance(() =>
             source.throw ? source.throw(error) : Promise.reject(error),
@@ -234,6 +295,25 @@ export function createDetachedScopeStream<T>(
     [Symbol.asyncDispose]: async () => {
       await finish()
     },
+  }
+
+  signal?.addEventListener("abort", onAbort, { once: true })
+  if (signal?.aborted) {
+    onAbort()
+  }
+  try {
+    source = innermost.run(() =>
+      open(innermost, controller.signal)[Symbol.asyncIterator](),
+    )
+    opened = true
+  } catch (error) {
+    // Nobody receives the stream, so teardown failures can only surface as
+    // unhandled rejections.
+    void close()
+    throw error
+  }
+  if (stopped) {
+    onAbort()
   }
   return stream
 }

@@ -1,6 +1,7 @@
 // Checks the built package on every runtime the README claims support for.
 // Run it after `bun run build` with node, deno, or bun.
 import assert from "node:assert/strict"
+import { setTimeout as abortableDelay } from "node:timers/promises"
 
 import {
   AsyncFactoryError,
@@ -201,20 +202,35 @@ async function checkMultipleRuntimes() {
 // A detached stream keeps the request's overrides for every read after the
 // request scope has closed, and runDetached refuses a generator result.
 async function checkDetached() {
+  const controller = new AbortController()
+  let streamSignal
   const stream = await withOverrides(
     provide(useConfig, { url: "detached" }),
     () =>
-      createDetachedStream(async function* () {
-        while (true) {
-          yield useDb().url
-        }
-      }),
+      createDetachedStream(
+        async function* (_scope, signal) {
+          streamSignal = signal
+          try {
+            yield useDb().url
+            yield useDb().url
+            await abortableDelay(60_000, undefined, { signal })
+          } finally {
+            assert.equal(useDb().url, "detached")
+          }
+        },
+        { signal: controller.signal },
+      ),
   )
   const reader = stream[Symbol.asyncIterator]()
 
   assert.equal((await reader.next()).value, "detached")
   assert.equal((await reader.next()).value, "detached")
   assert.ok(!closedDatabases.includes("detached"))
+  const pendingRead = reader.next()
+  controller.abort()
+  assert.equal(streamSignal.aborted, true)
+  assert.deepEqual(await reader.next(), { done: true, value: undefined })
+  assert.deepEqual(await pendingRead, { done: true, value: undefined })
   await stream[Symbol.asyncDispose]()
   assert.ok(closedDatabases.includes("detached"))
   assert.equal(await runDetached(() => useDb().url), "production")

@@ -10,6 +10,7 @@ import {
   createValueOverride,
   type Dependency,
   type DetachedStream,
+  type DetachedStreamOptions,
   defineDependency,
   defineFactoryDependency,
   dispose,
@@ -306,11 +307,16 @@ describe("module-level API", () => {
   })
 
   it("exposes detached streams through the module-level API", async () => {
+    const controller = new AbortController()
+    const options: DetachedStreamOptions = { signal: controller.signal }
     const stream: DetachedStream<number> = createDetachedStream(
-      async function* (scope) {
+      async function* (scope, signal) {
         expectTypeOf(scope).toEqualTypeOf<Scope>()
+        expectTypeOf(signal).toEqualTypeOf<AbortSignal>()
+        expect(signal).not.toBe(controller.signal)
         yield 42
       },
+      options,
     )
     const values: number[] = []
 
@@ -606,9 +612,13 @@ describe("type inference", () => {
     const globalStream = createDetachedStream(async function* () {
       yield 1
     })
-    const runtimeStream = runtime.createDetachedStream(async function* () {
-      yield "value"
-    })
+    const runtimeStream = runtime.createDetachedStream(
+      async function* (scope, signal) {
+        expectTypeOf(scope).toEqualTypeOf<Scope>()
+        expectTypeOf(signal).toEqualTypeOf<AbortSignal>()
+        yield "value"
+      },
+    )
 
     expectTypeOf(globalCall).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(runtimeCall).toEqualTypeOf<Promise<number | string>>()
