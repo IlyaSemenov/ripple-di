@@ -355,6 +355,31 @@ describe("dependency-aware memoization", () => {
     await runtime.dispose()
   })
 
+  it("identifies a standalone memo as a computation in cross-scope errors", async () => {
+    const runtime = createRuntime()
+    const Value = runtime.defineDependency(() => "value", { name: "value" })
+    const computationScope = runtime.createScope()
+    const requestedScope = runtime.createScope()
+    const computation = memoize(() => {
+      computationScope.resolve(Value)
+      return requestedScope.resolve(Value)
+    })
+
+    let error: unknown
+    try {
+      computation()
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(CrossScopeResolutionError)
+    const crossScopeError = error as CrossScopeResolutionError
+    expect(crossScopeError.message).toBe(
+      `Computation in scope "${crossScopeError.factoryScopeName}" cannot explicitly resolve ` +
+        `"value" from scope "${crossScopeError.requestedScopeName}".`,
+    )
+    await runtime.dispose()
+  })
+
   it("does not serve a cached dependency value from disposer context", async () => {
     const runtime = createRuntime()
     const Value = runtime.defineDependency(() => "value")

@@ -179,15 +179,16 @@ export class ScopeClosedError extends RippleError {
   }
 }
 
-/** A factory tried to read explicitly from a different scope. */
+/** A factory or memo computation tried to read explicitly from a different scope. */
 export class CrossScopeResolutionError extends RippleError {
   constructor(
     readonly dependencyName: string,
+    /** Scope of the factory or memo computation that initiated the read. */
     readonly factoryScopeName: string,
     readonly requestedScopeName: string,
   ) {
     super(
-      `Factory in scope "${factoryScopeName}" cannot explicitly resolve ` +
+      `Computation in scope "${factoryScopeName}" cannot explicitly resolve ` +
         `"${dependencyName}" from scope "${requestedScopeName}".`,
     )
     this.name = "CrossScopeResolutionError"
