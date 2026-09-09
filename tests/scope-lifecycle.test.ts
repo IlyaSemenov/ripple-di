@@ -1796,6 +1796,49 @@ describe("retire and close", () => {
     await runtime.dispose()
   })
 
+  it("reports the closing owner when an active child reads its cached value", async () => {
+    const runtime = createRuntime()
+    const useDb = runtime.defineDependency<object>({ name: "db" })
+    const useBlocker = runtime.defineDependency<object>()
+    let releaseCleanup!: () => void
+    const cleanup = new Promise<void>((resolve) => {
+      releaseCleanup = resolve
+    })
+    const owner = runtime.createScope(provideFactory(useDb, () => ({})))
+    owner.createScope(provide(useBlocker, {}, { dispose: () => cleanup }))
+    const reader = owner.createScope()
+    reader.resolve(useDb)
+
+    const closing = owner.close()
+    try {
+      expect(reader.run(() => "active")).toBe("active")
+      let ownerError: unknown
+      let readerError: unknown
+      try {
+        owner.resolve(useDb)
+      } catch (error) {
+        ownerError = error
+      }
+      try {
+        reader.resolve(useDb)
+      } catch (error) {
+        readerError = error
+      }
+      expect(readerError).toBeInstanceOf(ScopeClosedError)
+      expect(readerError).toMatchObject({
+        targetName: "db",
+        scopeName: (ownerError as ScopeClosedError).scopeName,
+        scopeId: (ownerError as ScopeClosedError).scopeId,
+        state: "closing",
+        message: (ownerError as ScopeClosedError).message,
+      })
+    } finally {
+      releaseCleanup()
+      await closing
+      await runtime.dispose()
+    }
+  })
+
   it("returns one lifecycle promise and escalates retire to force close", async () => {
     const runtime = createRuntime()
     const parent = runtime.createScope()

@@ -103,7 +103,7 @@ export function resolveUntracked<T>(
   const cached = requestedScope.viewCache.get(asUnknownNode(node))
   if (cached) {
     const typed = cached as ResolutionRef<T>
-    assertUsableRef(typed, node, requestedScope)
+    assertUsableRef(typed, node)
     return typed
   }
 
@@ -449,7 +449,6 @@ function assertPubliclyReadable(
 function assertUsableRef<T>(
   resolved: ResolutionRef<T>,
   node: DependencyNode<T>,
-  requestedScope: ScopeContext,
 ): void {
   if (resolved.stamp.kind !== "cell") {
     return
@@ -461,9 +460,9 @@ function assertUsableRef<T>(
   ) {
     throw new ScopeClosedError(
       node.name,
-      requestedScope.name,
-      requestedScope.id,
-      requestedScope.state,
+      cell.owner.name,
+      cell.owner.id,
+      cell.owner.state,
     )
   }
 }
