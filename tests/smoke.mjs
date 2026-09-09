@@ -44,6 +44,27 @@ function checkAmbientRead() {
   assert.equal(useDb().url, "production")
 }
 
+async function checkDefinitionSites() {
+  const runtime = createRuntime()
+  const dependencies = [
+    defineDependency(),
+    defineFactoryDependency(),
+    runtime.defineDependency(),
+    runtime.defineFactoryDependency(),
+  ]
+  for (const dependency of dependencies) {
+    assert.throws(dependency, (error) => {
+      assert.ok(error instanceof MissingProviderError)
+      assert.match(
+        error.dependencyName,
+        /^dependency#\d+ \(tests\/smoke\.mjs:\d+\)$/,
+      )
+      return true
+    })
+  }
+  await runtime.dispose()
+}
+
 // Overrides survive an async context switch and stay isolated in parallel.
 async function checkScopedOverrides() {
   const scopedUrl = await withOverrides(
@@ -254,6 +275,7 @@ async function checkShutdown() {
 }
 
 checkAmbientRead()
+await checkDefinitionSites()
 await checkScopedOverrides()
 await checkFactoryDependency()
 await checkInstallation()

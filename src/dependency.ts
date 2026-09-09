@@ -142,19 +142,12 @@ export function captureDefinitionSite(
   caller: (...args: never) => unknown,
 ): string | undefined {
   const error = new Error()
-  const captureStackTrace =
-    typeof Error.captureStackTrace === "function"
-      ? Error.captureStackTrace
-      : undefined
-  if (captureStackTrace) {
-    captureStackTrace(error, caller)
-  }
-
-  const frames = error.stack?.split("\n").slice(1) ?? []
   // captureStackTrace omits internal frames through caller, leaving the
   // application's definition site first.
-  const skippedFrames = captureStackTrace ? frames : frames.slice(2)
-  for (const frame of skippedFrames) {
+  Error.captureStackTrace(error, caller)
+
+  const frames = error.stack?.split("\n").slice(1) ?? []
+  for (const frame of frames) {
     const site = definitionSiteFromFrame(frame)
     if (site) {
       return site
@@ -165,17 +158,12 @@ export function captureDefinitionSite(
 
 /** Reduces one stack frame to `file:line`, or `undefined` without a location. */
 function definitionSiteFromFrame(frame: string): string | undefined {
-  // V8 writes "at name (location)" or a bare "at location"; other engines write
-  // "name@location".
+  // Supported runtimes write "at name (location)" or a bare "at location".
   let location = frame.trim().replace(/^at\s+/, "")
   const openingParenthesis = location.lastIndexOf("(")
   if (openingParenthesis >= 0 && location.endsWith(")")) {
     location = location.slice(openingParenthesis + 1, -1)
   } else {
-    const atSign = location.lastIndexOf("@")
-    if (atSign >= 0) {
-      location = location.slice(atSign + 1)
-    }
     location = location.replace(/^async\s+/, "")
   }
 
