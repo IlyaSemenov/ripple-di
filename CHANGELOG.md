@@ -1,5 +1,13 @@
 # ripple-di
 
+## 3.1.1
+
+### Patch Changes
+
+- f049d54: Report the closing owner in `ScopeClosedError` when a child reads an unavailable dependency.
+- 51b8244: Include dependency names in `MemoCycleError` paths when a memo cycle passes through dependency factories.
+- f1ccdca: Use `Computation` for both factories and memos in `CrossScopeResolutionError` messages.
+
 ## 3.1.0
 
 ### Minor Changes
