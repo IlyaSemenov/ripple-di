@@ -339,6 +339,37 @@ describe("dependency-aware memoization", () => {
     await runtime.dispose()
   })
 
+  it("includes dependency factories inside a memo cycle but omits its caller", async () => {
+    const runtime = createRuntime()
+    let computation!: () => string
+    const Bridge = runtime.defineDependency(() => computation(), {
+      name: "bridge",
+    })
+    computation = memoize(function summary() {
+      return Bridge()
+    })
+    const Caller = runtime.defineDependency(() => computation(), {
+      name: "caller",
+    })
+
+    let error: unknown
+    try {
+      Caller()
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(MemoCycleError)
+    expect((error as MemoCycleError).path).toEqual([
+      "summary",
+      "bridge",
+      "summary",
+    ])
+    expect((error as Error).message).toBe(
+      "Memo cycle: summary \u2192 bridge \u2192 summary.",
+    )
+    await runtime.dispose()
+  })
+
   it("rejects explicit resolution from another factory scope", async () => {
     const runtime = createRuntime()
     const Value = runtime.defineDependency(() => "value")

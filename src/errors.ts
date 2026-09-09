@@ -111,7 +111,7 @@ export class DependencyCycleError extends RippleError {
   }
 }
 
-/** Memoized computations called one another in a cycle. */
+/** A memo computation called itself again, directly or through memos or dependency factories. */
 export class MemoCycleError extends RippleError {
   constructor(readonly path: readonly string[]) {
     super(`Memo cycle: ${path.join(" \u2192 ")}.`)

@@ -126,10 +126,9 @@ export function framesFrom(index: number): readonly EvaluationFrame[] {
 }
 
 /**
- * Names the chain of memo computations that leads back to this one.
+ * Names the memo computations and dependency factories in a memo cycle.
  *
- * Returns `undefined` when it is not already running. Dependency factories
- * between two memo frames are left out of the path.
+ * Returns `undefined` when this memo and receiver are not already running.
  */
 export function memoCyclePath(
   identity: symbol,
@@ -145,11 +144,5 @@ export function memoCyclePath(
   if (start < 0) {
     return undefined
   }
-  return [
-    ...trackingStack
-      .slice(start)
-      .filter((frame) => frame.kind === "memo")
-      .map((frame) => frame.name),
-    endingName,
-  ]
+  return [...trackingStack.slice(start).map((frame) => frame.name), endingName]
 }
