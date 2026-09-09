@@ -68,8 +68,15 @@ export interface CellStamp<T = unknown> {
   readonly home: ScopeContext
 }
 
+/**
+ * Identity that a later resolution compares against to decide reuse.
+ *
+ * `home` is the scope the identity lives in: the one holding the binding, or
+ * the one that owns the materialized value.
+ */
 export type DependencyStamp<T = unknown> = BindingStamp<T> | CellStamp<T>
 
+/** Provider recipe paired with the identity of its installation. */
 export interface BoundProvider<T> {
   readonly spec: ProviderSpec<T>
   readonly stamp: BindingStamp<T>
@@ -106,12 +113,19 @@ export interface Cell<T> extends ResolutionRef<T> {
   readonly stamp: CellStamp<T>
   readonly providerStamp: BindingStamp<T>
   readonly dependencies: readonly DependencyRecord[]
+  /**
+   * False when the factory swallowed a failed dependency read.
+   *
+   * Such a value can depend on that failure, so it stays in the scope that
+   * requested it and is never reused elsewhere.
+   */
   readonly reusable: boolean
   state: "ready" | "disposing" | "disposed"
 }
 
 /** Acquisition-ordered cleanup entry owned by one scope. */
 export interface Finalizer {
+  /** Absent for a directly supplied owned value, which has no cell. */
   readonly cell?: Cell<unknown>
   readonly run: () => void | Promise<void>
 }
@@ -124,7 +138,9 @@ export interface ScopeContext extends Scope {
   readonly [scopeParent]: ScopeContext | undefined
   readonly depth: number
   readonly bindings: Map<DependencyNode<unknown>, BoundProvider<unknown>>
+  /** Cached values, including references to cells owned by ancestors. */
   readonly viewCache: Map<DependencyNode<unknown>, ResolutionRef<unknown>>
+  /** Latest owned cell per dependency, used to find reuse candidates for descendants. */
   readonly ownedCells: Map<DependencyNode<unknown>, Cell<unknown>>
   readonly finalizers: Finalizer[]
   readonly children: Set<ScopeContext>

@@ -235,6 +235,8 @@ export class ScopeImpl implements ScopeContext {
         }
       }
 
+      // Reverse acquisition order: a value is disposed before the values it was
+      // built from.
       for (let index = this.finalizers.length - 1; index >= 0; index -= 1) {
         const finalizer = this.finalizers[index]
         if (!finalizer) {
@@ -355,6 +357,8 @@ export async function withChildScope<TCallbackResult>(
     result = await child.run(() => callback(child))
   } catch (error) {
     callbackFailed = true
+    // Preserve a callback's AggregateError as one error, including when cleanup
+    // adds failures of its own.
     errors.push(error)
   }
 

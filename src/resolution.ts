@@ -66,6 +66,8 @@ export function resolveTracked<T>(
         scope.name,
       )
     }
+    // Pin the frame before resolution, even if the provider later fails.
+    // Subsequent reads must use the same runtime and scope.
     if (consumerFrame) {
       consumerFrame.runtime = scope.runtime
       consumerFrame.scope = scope
@@ -77,6 +79,8 @@ export function resolveTracked<T>(
     }
     return resolved.value
   } catch (error) {
+    // Failed reads have no stamp to compare later, so a consumer that catches
+    // this failure cannot safely reuse its result in another context.
     if (consumerFrame) {
       consumerFrame.hasFailedDependencyRead = true
     }
@@ -132,6 +136,7 @@ export function resolveUntracked<T>(
   return materialize(requestedScope, node, provider)
 }
 
+/** Finds the nearest installed binding, falling back to the built-in factory. */
 function findEffectiveProvider<T>(
   scope: ScopeContext,
   node: DependencyNode<T>,
@@ -154,6 +159,7 @@ function findReusableAncestorCell<T>(
   node: DependencyNode<T>,
   provider: BoundProvider<T>,
 ): Cell<T> | undefined {
+  // Cells owned by the requested scope itself are already in its view cache.
   for (
     let cursor = requestedScope[scopeParent];
     cursor;
@@ -182,6 +188,9 @@ function isReusable<T>(
     return false
   }
 
+  // Resolving the recorded dependencies from the requested scope can materialize
+  // values there. A mismatch or a failure only rules this cell out and never
+  // fails the read that asked for it.
   for (const record of cell.dependencies) {
     try {
       const dependencyNode = nodeOf(record.dependency)
@@ -252,6 +261,9 @@ function materialize<T>(
     }),
   )
 
+  // A reusable value belongs to the deepest scope among its provider and
+  // dependencies so it cannot outlive them. These scopes all lie on the
+  // requested scope's ancestor chain.
   const reusable = !frame.hasFailedDependencyRead
   const owner = !reusable
     ? requestedScope
@@ -286,6 +298,12 @@ function materialize<T>(
   return cell
 }
 
+/**
+ * Adds one dependency edge to a frame.
+ *
+ * A frame reads through one scope whose caches are never invalidated, so a
+ * second identity for the same dependency means the graph is corrupted.
+ */
 function recordDependency<T>(
   frame: TrackingFrame,
   node: DependencyNode<T>,
@@ -422,6 +440,12 @@ function assertPubliclyReadable(
   }
 }
 
+/**
+ * Rejects a cached cell once it or its owner starts closing.
+ *
+ * While an ancestor closes its children, a child may still hold a cached
+ * reference to that ancestor's cell.
+ */
 function assertUsableRef<T>(
   resolved: ResolutionRef<T>,
   node: DependencyNode<T>,

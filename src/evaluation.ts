@@ -32,15 +32,20 @@ export interface MemoTrackingFrame extends TrackingState {
   readonly receiver: object | undefined
 }
 
+/** Active factory or memo computation whose dependency reads are recorded. */
 export type TrackingFrame = EvaluationFrame | MemoTrackingFrame
 
+// A factory frame goes on both stacks: tracking needs the complete nesting
+// order, while factory cycle detection and resolution paths omit memos.
 const trackingStack: TrackingFrame[] = []
 const evaluationStack: EvaluationFrame[] = []
 
+/** Innermost factory or memo computation, if one is running. */
 export function currentTracking(): TrackingFrame | undefined {
   return trackingStack.at(-1)
 }
 
+/** Innermost factory, even when a nested memo is currently running. */
 export function currentEvaluation(): EvaluationFrame | undefined {
   return evaluationStack.at(-1)
 }
@@ -53,6 +58,8 @@ export function assertOutsideTracking(
   const tracking = currentTracking()
   if (
     tracking?.kind === "memo" &&
+    // Without an inherited runtime or a prior read, a memo rejects scope
+    // management in every runtime.
     (!tracking.runtime || tracking.runtime === runtime)
   ) {
     throw new MemoScopeOperationError(tracking.name, operation)
@@ -64,27 +71,32 @@ export function assertOutsideTracking(
   }
 }
 
+/** Enters a factory on both the tracking and factory stacks. */
 export function pushEvaluation(frame: EvaluationFrame): void {
   trackingStack.push(frame)
   evaluationStack.push(frame)
 }
 
+/** Leaves a factory; throws if either stack no longer ends with this frame. */
 export function popEvaluation(frame: EvaluationFrame): void {
   if (evaluationStack.pop() !== frame || trackingStack.pop() !== frame) {
     throw new Error("ripple-di evaluation stack became inconsistent.")
   }
 }
 
+/** Enters dependency tracking without adding a factory evaluation. */
 export function pushTracking(frame: TrackingFrame): void {
   trackingStack.push(frame)
 }
 
+/** Leaves dependency tracking; throws if this frame is no longer innermost. */
 export function popTracking(frame: TrackingFrame): void {
   if (trackingStack.pop() !== frame) {
     throw new Error("ripple-di tracking stack became inconsistent.")
   }
 }
 
+/** Index of the factory evaluating this dependency and provider identity, or -1. */
 export function cycleStart(
   node: DependencyNode<unknown>,
   providerStamp: BindingStamp,
@@ -96,20 +108,29 @@ export function cycleStart(
   )
 }
 
+/** Names active factories and appends the failed dependency when supplied. */
 export function resolutionPath(
   ending?: DependencyNode<unknown>,
 ): readonly string[] {
   const path = evaluationStack.map((frame) => frame.node.name)
+  // The failed dependency is already last when its own factory is running.
   if (ending && evaluationStack.at(-1)?.node !== ending) {
     path.push(ending.name)
   }
   return path
 }
 
+/** Frames from a cycle start to the innermost one, in call order. */
 export function framesFrom(index: number): readonly EvaluationFrame[] {
   return evaluationStack.slice(index)
 }
 
+/**
+ * Names the chain of memo computations that leads back to this one.
+ *
+ * Returns `undefined` when it is not already running. Dependency factories
+ * between two memo frames are left out of the path.
+ */
 export function memoCyclePath(
   identity: symbol,
   receiver: object | undefined,

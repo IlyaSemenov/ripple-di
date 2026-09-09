@@ -87,6 +87,8 @@ class OverrideRunnerImpl implements OverrideRunner {
     parent: ScopeContext,
     callback: LayerCallback,
   ): Promise<unknown> {
+    // The base layer receives this one's entry as its callback, so the scopes
+    // nest in extension order.
     const enter = (scope: ScopeContext) =>
       withChildScope(scope, this.factory(), callback)
     return this.base ? this.base.enterLayers(parent, enter) : enter(parent)

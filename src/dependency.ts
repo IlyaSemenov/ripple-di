@@ -151,6 +151,8 @@ export function captureDefinitionSite(
   }
 
   const frames = error.stack?.split("\n").slice(1) ?? []
+  // captureStackTrace omits internal frames through caller, leaving the
+  // application's definition site first.
   const skippedFrames = captureStackTrace ? frames : frames.slice(2)
   for (const frame of skippedFrames) {
     const site = definitionSiteFromFrame(frame)
@@ -161,7 +163,10 @@ export function captureDefinitionSite(
   return undefined
 }
 
+/** Reduces one stack frame to `file:line`, or `undefined` without a location. */
 function definitionSiteFromFrame(frame: string): string | undefined {
+  // V8 writes "at name (location)" or a bare "at location"; other engines write
+  // "name@location".
   let location = frame.trim().replace(/^at\s+/, "")
   const openingParenthesis = location.lastIndexOf("(")
   if (openingParenthesis >= 0 && location.endsWith(")")) {
@@ -221,6 +226,7 @@ function createCallableDependency<T, TDependency extends DependencyToken<T>>(
   return node.dependency as TDependency
 }
 
+/** Reads private metadata; rejects dependencies not created by this package copy. */
 export function nodeOf<T>(dependency: DependencyToken<T>): DependencyNode<T> {
   const node = dependencyNodes.get(dependency)
   if (!node) {

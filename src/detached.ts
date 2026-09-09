@@ -22,6 +22,8 @@ export async function runDetachedScopeContext<TCallbackResult>(
   callback: (scope: ScopeContext) => TCallbackResult,
 ): Promise<Awaited<TCallbackResult>> {
   const snapshots = snapshotDetachedLayers(base, current, "Runtime.runDetached")
+  // Always at least one layer, so the callback gets a scope of its own even when
+  // the current scope is the base.
   const layers = snapshots.length > 0 ? snapshots : [[]]
   return await replayDetachedLayers(base, layers, 0, callback)
 }
@@ -62,8 +64,11 @@ function snapshotDetachedLayers(
     cursor = cursor[scopeParent]
   }
 
+  // Reenter outer layers first so inner overrides retain precedence.
   scopes.reverse()
 
+  // A separate pass so that an unreproducible layer rejects the operation
+  // before anything is created.
   for (const scope of scopes) {
     for (const binding of scope.bindings.values()) {
       if (binding.spec.kind === "owned-value") {
@@ -245,6 +250,8 @@ export function createDetachedScopeStream<T>(
     if (finishing) {
       return finishing
     }
+    // A read has started cleanup and owns reporting its failures; this call
+    // only waits for that cleanup.
     if (closing) {
       return closing.then(
         () => finished,
@@ -297,6 +304,9 @@ export function createDetachedScopeStream<T>(
     },
   }
 
+  // Listening starts before the source exists, because open() can abort the
+  // signal synchronously. Cleanup needs the source, so an abort seen that early
+  // only stops new reads and is replayed once open() returns.
   signal?.addEventListener("abort", onAbort, { once: true })
   if (signal?.aborted) {
     onAbort()

@@ -33,6 +33,7 @@ export interface ProvideOptions<T> {
   readonly dispose?: Disposer<T> | true
 }
 
+/** Private dependency and provider recipe carried by an opaque provision. */
 export interface ProvisionRecord<T> {
   readonly dependency: DependencyToken<T>
   readonly spec: ProviderSpec<T>
@@ -45,6 +46,7 @@ function createProvision<T>(
   dependency: DependencyToken<T>,
   spec: ProviderSpec<T>,
 ): Provision {
+  // Validate package-copy identity before returning a provision.
   nodeOf(dependency)
   const provision = {} as Provision
   provisionRecords.set(provision, {
@@ -54,6 +56,7 @@ function createProvision<T>(
   return provision
 }
 
+/** Reads private metadata; rejects provisions not created by this package copy. */
 export function provisionOf(provision: Provision): ProvisionRecord<unknown> {
   const record = provisionRecords.get(provision)
   if (!record) {

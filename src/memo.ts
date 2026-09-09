@@ -44,6 +44,8 @@ function createMemoized<TReceiver extends object | undefined, TResult>(
 ): (this: TReceiver) => TResult {
   const objectCells = new WeakMap<object, MemoCell<TResult>>()
   let standaloneCell: MemoCell<TResult> | undefined
+  // One identity per memoized function, shared by every receiver; recursion is
+  // detected on the identity and the receiver together.
   const identity = Symbol(name)
 
   return function memoized(this: TReceiver, ...args: unknown[]): TResult {
@@ -62,6 +64,8 @@ function createMemoized<TReceiver extends object | undefined, TResult>(
     }
 
     const receiver = this ?? undefined
+    // Checked before the cache so a value left from an earlier evaluation
+    // cannot hide the recursion.
     const cyclePath = memoCyclePath(identity, receiver, name)
     if (cyclePath) {
       throw new MemoCycleError(cyclePath)
@@ -92,9 +96,13 @@ function createMemoized<TReceiver extends object | undefined, TResult>(
       }
     } finally {
       popTracking(frame)
+      // Propagate on failure too: the consumer needs the reads this computation
+      // made before it threw.
       propagateTrackedDependencies(frame, consumer)
     }
 
+    // A partial dependency set cannot validate the value later, so nothing is
+    // cached.
     if (frame.hasFailedDependencyRead) {
       return value
     }

@@ -234,6 +234,12 @@ class RuntimeImpl implements RuntimeContext {
     )
   }
 
+  /**
+   * Defines a dependency with a definition site captured by the caller.
+   *
+   * The module-level function delegates here so that the captured site is the
+   * application's own call and not the delegating wrapper.
+   */
   defineDependencyAt<T>(
     factoryOrOptions:
       | (() => FactoryResult<T>)
@@ -274,6 +280,7 @@ class RuntimeImpl implements RuntimeContext {
     )
   }
 
+  /** Counterpart of `defineDependencyAt` for overrideable factories. */
   defineFactoryDependencyAt<TFactory extends AnyFactory>(
     factoryOrOptions: TFactory | FactoryDependencyOptions | undefined,
     maybeOptions: FactoryDependencyOptions | undefined,
@@ -391,6 +398,7 @@ class RuntimeImpl implements RuntimeContext {
 
   dispose(): Promise<void> {
     this.assertScopeManagementAllowed("Runtime.dispose")
+    // Detach first: the installation scope then closes as an ordinary child.
     this.activeInstallation = undefined
     return this.root.close()
   }
@@ -402,6 +410,8 @@ class RuntimeImpl implements RuntimeContext {
   closeInstallation(installation: InstallationImpl): Promise<void> {
     if (this.activeInstallation === installation) {
       this.activeInstallation = undefined
+      // Kept until the close settles so that a replacement install() reports
+      // pending cleanup instead of unrelated live scopes.
       this.closingInstallation = installation
       const close = installation.scope.close()
       // Return the derived chain so an ignored failed close remains an unhandled rejection.
@@ -430,6 +440,13 @@ class RuntimeImpl implements RuntimeContext {
     return this.ambient.getStore() ?? this.baseScope()
   }
 
+  /**
+   * Resolves a callable read from the innermost context available.
+   *
+   * A tracking frame pins the scope so that every read of one computation
+   * agrees; otherwise the ambient scope applies, and finally the active
+   * installation or the root.
+   */
   readCallable<T>(node: DependencyNode<T>): T {
     const frame = currentTracking()
     if (frame) {
@@ -455,6 +472,8 @@ class RuntimeImpl implements RuntimeContext {
       return undefined
     }
 
+    // Share one default binding identity across scopes so it does not prevent
+    // reuse when the factory's recorded dependencies also match.
     const unknownNode = node as DependencyNode<unknown>
     let provider = this.defaults.get(unknownNode)
     if (!provider) {
@@ -472,6 +491,7 @@ class RuntimeImpl implements RuntimeContext {
     return provider as BoundProvider<T>
   }
 
+  /** Selects the scope for an explicit `resolve`; a factory pins it to its own. */
   private currentScope(operation: string): ScopeContext {
     const frame = currentEvaluation()
     if (frame) {
@@ -488,6 +508,7 @@ class RuntimeImpl implements RuntimeContext {
     return this.ambient.getStore() ?? this.baseScope()
   }
 
+  /** Default parent for new context: the active installation, or the root. */
   private baseScope(): ScopeImpl {
     return this.activeInstallation?.scope ?? this.root
   }
