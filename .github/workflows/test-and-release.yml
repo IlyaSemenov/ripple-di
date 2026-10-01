@@ -64,7 +64,7 @@ jobs:
           deno-version: v2.x
 
       - name: Smoke test on Deno
-        run: deno run tests/smoke.mjs
+        run: deno run --allow-env --allow-read --allow-write tests/smoke.mjs
 
   test-and-release:
     name: Test and Release

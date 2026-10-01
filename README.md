@@ -843,13 +843,47 @@ The name only affects messages.
 Without an explicit name, Ripple DI uses a non-empty factory name or shows a generated name with the `defineDependency` call location, such as `dependency#21 (packages/core/src/openai/config.ts:36)`.
 The location follows the runtime's stack and source maps, is captured once when the dependency is defined, and adds no work during resolution.
 
-## Do not mix package copies
+## Several package copies
 
-Two copies of Ripple DI, separately installed or bundled, each run their own graph and cannot be combined.
-Do not pass dependencies or provisions between them, and do not call one copy's dependency inside a factory owned by the other.
+By default, every copy of Ripple DI, separately installed or bundled, runs its own graph.
+Do not pass dependencies or provisions between such copies, and do not call one copy's dependency inside a factory owned by another.
 Such a call is not detected: the dependency may resolve against its own copy instead of failing at the boundary.
 
 Declare `ripple-di` as a peer dependency in any package that exports dependencies of its own.
+
+### Share one implementation between copies
+
+When one process has to run code that imports different copies of the same Ripple DI version, such as packages with separate installations or a bundle that inlines Ripple DI next to an external installation, load `ripple-di/shared` before any module that imports `ripple-di`.
+Preload it when the process starts:
+
+```sh
+node --import ripple-di/shared server.mjs
+bun --preload ripple-di/shared server.ts
+```
+
+Or make it the first import of the entry module, because static imports are evaluated in order:
+
+```ts
+// server.ts
+import "ripple-di/shared"
+
+import { startServer } from "./app"
+```
+
+Every copy loaded afterward uses the implementation of the copy that loaded `ripple-di/shared` first, while application code keeps importing from `ripple-di`.
+Dependencies, provisions, scopes, installations, memo computations, and shutdown then work across copies as if there were one, and `instanceof` recognizes errors from any of them.
+
+- Only copies of exactly the same version can share an implementation.
+  Loading a copy of another version afterward throws during import instead of starting a separate graph.
+- A copy evaluated before `ripple-di/shared` keeps its own implementation, and the shared copies reject its dependencies and provisions with `TypeError`.
+- Sharing cannot be turned off, and loading `ripple-di/shared` again from a copy of the same version changes nothing.
+- `createRuntime()` still creates an independent runtime through any copy, and dependencies still cannot cross runtimes.
+- Sharing covers one JavaScript realm: every worker thread and every process enables it for its own copies.
+- TypeScript accepts values from another installation of the same version, but not from a different version.
+
+Sharing Ripple DI does not share other packages.
+A database client, ORM, or connection pool installed twice still runs as two copies with separate module state, and objects created by one copy may fail identity checks in the other.
+Make such packages resolve to one installation, or create one instance and provide it through a dependency.
 
 ## Caveats
 

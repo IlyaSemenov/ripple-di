@@ -21,7 +21,9 @@
   ],
   "author": "Ilya Semenov",
   "license": "MIT",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/shared.mjs"
+  ],
   "engines": {
     "node": ">=18.18.0"
   },
@@ -34,6 +36,7 @@
   "bugs": "https://github.com/IlyaSemenov/ripple-di/issues",
   "exports": {
     ".": "./dist/index.mjs",
+    "./shared": "./dist/shared.mjs",
     "./package.json": "./package.json"
   },
   "types": "./dist/index.d.mts",

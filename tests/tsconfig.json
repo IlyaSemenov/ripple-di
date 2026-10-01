@@ -5,5 +5,6 @@
       "ripple-di": ["../src"]
     }
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts"],
+  "exclude": ["shared-copies"]
 }

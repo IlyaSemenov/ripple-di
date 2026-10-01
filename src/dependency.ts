@@ -1,4 +1,5 @@
 import type { DependencyNode, RuntimeContext } from "./graph"
+import { foreignMetadataError } from "./sharing"
 import type { FactoryResult } from "./value"
 
 declare const dependencyBrand: unique symbol
@@ -218,11 +219,7 @@ function createCallableDependency<T, TDependency extends DependencyToken<T>>(
 export function nodeOf<T>(dependency: DependencyToken<T>): DependencyNode<T> {
   const node = dependencyNodes.get(dependency)
   if (!node) {
-    throw new TypeError(
-      "Value is not a dependency created by this copy of ripple-di. " +
-        "If it came from ripple-di, the package may be installed or bundled " +
-        "more than once.",
-    )
+    throw foreignMetadataError("dependency")
   }
   return node as DependencyNode<T>
 }

@@ -1,7 +1,11 @@
 // Checks the built package on every runtime the README claims support for.
 // Run it after `bun run build` with node, deno, or bun.
 import assert from "node:assert/strict"
+import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { setTimeout as abortableDelay } from "node:timers/promises"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 import {
   AsyncFactoryError,
@@ -18,6 +22,7 @@ import {
   install,
   MissingProviderError,
   provide,
+  resolve,
   runDetached,
   ScopeClosedError,
   withOverrides,
@@ -274,6 +279,41 @@ async function checkShutdown() {
   assert.throws(() => useDb(), ScopeClosedError)
 }
 
+// The default entry writes no global state. After the opt-in entry, a physical
+// copy of the built files joins this copy's implementation.
+async function checkSharedCopies() {
+  assert.equal(
+    Symbol.for("ripple-di.shared-implementation") in globalThis,
+    false,
+  )
+  await import("../dist/shared.mjs")
+
+  const directory = mkdtempSync(join(tmpdir(), "ripple-di-smoke-"))
+  try {
+    const dist = fileURLToPath(new URL("../dist", import.meta.url))
+    for (const file of readdirSync(dist)) {
+      copyFileSync(join(dist, file), join(directory, file))
+    }
+    const copy = await import(pathToFileURL(join(directory, "index.mjs")).href)
+    assert.equal(copy.defineDependency, defineDependency)
+
+    const useUrl = copy.defineDependency(() => useDb().url)
+    assert.equal(
+      await copy.withOverrides(provide(useConfig, { url: "shared" }), () =>
+        useUrl(),
+      ),
+      "shared",
+    )
+    assert.ok(closedDatabases.includes("shared"))
+    assert.throws(
+      () => resolve(copy.defineDependency()),
+      copy.MissingProviderError,
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
 checkAmbientRead()
 await checkDefinitionSites()
 await checkScopedOverrides()
@@ -288,6 +328,7 @@ await checkAwaitableValue()
 await checkMultipleRuntimes()
 await checkDetached()
 await checkWithoutProvider()
+await checkSharedCopies()
 await checkShutdown()
 
 const runtimeName = globalThis.Bun

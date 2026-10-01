@@ -2,6 +2,7 @@ import type { DependencyToken, Disposer } from "./dependency"
 import { nodeOf } from "./dependency"
 import { OwnedProvisionReuseError } from "./errors"
 import type { ProviderSpec } from "./graph"
+import { foreignMetadataError } from "./sharing"
 import { type FactoryResult, markedValueOf } from "./value"
 
 declare const provisionBrand: unique symbol
@@ -60,11 +61,7 @@ function createProvision<T>(
 export function provisionOf(provision: Provision): ProvisionRecord<unknown> {
   const record = provisionRecords.get(provision)
   if (!record) {
-    throw new TypeError(
-      "Value is not a provision created by this copy of ripple-di. " +
-        "If it came from ripple-di, the package may be installed or bundled " +
-        "more than once.",
-    )
+    throw foreignMetadataError("provision")
   }
   return record
 }

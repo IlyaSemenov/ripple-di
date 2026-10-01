@@ -26,7 +26,7 @@ Do not catalog files or restate information evident from their names and locatio
 - Keep production code in `src/`.
 - Use `src/*.test.ts` only for focused tests of one source module.
 - Keep subsystem, package-boundary, and type-inference tests in `tests/`.
-- Keep `src/index.ts` as exports only.
+- Keep `src/index.ts` limited to implementation selection and public exports.
 - Treat `package.json` exports and supported runtimes as public contracts.
 
 ## Source map
@@ -42,8 +42,13 @@ Do not catalog files or restate information evident from their names and locatio
 - `scope.ts` defines the `Scope` contract and owns provision validation and binding, async context, and lifecycle boundaries.
 - `detached.ts` defines the `DetachedStream` contract and owns layer snapshots, their reproduction, and detached callbacks and streams.
 - `overrides.ts` defines the `OverrideRunner` and `ValueOverride` contracts and owns reusable override layers and helpers.
+- `api.ts` lists the public exports of this copy's own implementation.
+- `sharing.ts` owns the realm-wide shared implementation record, its version check, and the diagnostic for values from another package copy.
+- `shared.ts` is the `ripple-di/shared` opt-in entry that publishes this copy's implementation.
+- `index.ts` exports the public API of the selected implementation.
 
-Keep `index.ts` limited to explicit public exports because owner modules also export symbols for internal collaboration.
+Keep `api.ts` limited to explicit public exports because owner modules also export symbols for internal collaboration.
+Mirror every value export of `api.ts` in the destructured export of `index.ts`, and add a type alias there for every exported class.
 Do not collapse these responsibilities into a generic `internal.ts` module.
 Keep exported `RippleError` subclasses in `errors.ts`, even when only one subsystem throws them.
 Keep non-public invariant errors next to the subsystem that owns the invariant.
@@ -66,9 +71,14 @@ Factory-created values are reused whenever their provider and recorded dependenc
   Track the detached installation until close settles so a replacement attempt reports pending cleanup separately from unrelated live scopes.
 - Keep scope ancestry out of the public `Scope` contract so typed scope handles cannot expose an installation or the runtime root.
   Treat concrete `ScopeImpl` properties as internal implementation state, not as a hardened JavaScript capability boundary.
-- The module-local synchronous tracking and factory evaluation stacks are shared by every runtime created by one package copy.
-- Do not add process-wide state, `globalThis` writes, `Symbol.for` registry keys, or cross-copy protocols.
-  Callable reads across separately loaded copies are outside supported graph composition and intentionally remain undetected.
+- The module-local synchronous tracking and factory evaluation stacks are shared by every runtime created by one package copy, and by every copy that uses its implementation.
+- Without the `ripple-di/shared` opt-in, do not add process-wide state, `globalThis` writes, `Symbol.for` registry keys, or cross-copy protocols.
+  Callable reads across independent copies are outside supported graph composition and intentionally remain undetected.
+- Share separately loaded copies only by selecting one complete public implementation per realm, never by sharing individual metadata, state, or classes.
+  Only the opt-in entry writes the shared record, and the main entry only reads it during its own evaluation.
+  Keep the registry key and the record's `version` field stable across releases, and reject every copy whose exact version differs.
+  Report the mismatch with a plain `Error` during import, because classes of the rejected copy never match the shared ones.
+  Never merge copies evaluated before the opt-in or reassign their dependencies.
 - Callable dispatch order is tracking frame, the owning runtime's `AsyncLocalStorage`, then its active installation or root scope.
 - `Runtime` convenience methods use the same current scope selection, except detached APIs, which create temporary children of the runtime's active installation or root and remain part of that base scope's lifecycle.
 - Keep every `Runtime` method available as a module-level function that delegates to the built-in global runtime.
@@ -171,8 +181,10 @@ Describe the user-visible change.
 - `tests/scope-lifecycle.test.ts` covers scope creation, async context, ownership, disposal, retirement, close, and leaked scopes.
 - `tests/overrides.test.ts` covers override runners, their layers, value overrides, and per-call isolation.
 - `tests/model-based.test.ts` compares generated graphs with a deterministic reference resolver.
+- `tests/shared-copies.test.ts` builds physical package copies and runs the `tests/shared-copies/` scenarios in separate Bun and Node processes, including bundled copies and cross-copy types.
 - `tests/awaitable.ts` provides the shared awaitable test double and holds no tests.
-- `tests/smoke.mjs` exercises the built package through its public entry point on other runtimes, so it uses `node:assert` instead of `bun:test` and stays inside the language and library level supported by the oldest claimed Node version.
+- `tests/smoke.mjs` exercises the built package through its public entry points on other runtimes, so it uses `node:assert` instead of `bun:test` and stays inside the language and library level supported by the oldest claimed Node version.
+  It writes a temporary package copy, so Deno runs it with environment, read, and write permissions.
 
 - Add a `describe` block where the file gives a reason for it: several APIs or behaviors in one file, or a fixture that belongs to some cases but not all.
   Name such a block after what it covers and keep its fixtures inside it.
@@ -184,6 +196,7 @@ Describe the user-visible change.
 ## Checks
 
 - Run `bun test` for the directed and deterministic model-based suites.
+  The package-copy suite also needs `node` on `PATH`.
 - Run `bun types` to type-check production code and tests when public types change.
 - Run `bun run build` for package export, declaration, publint, and arethetypeswrong validation.
 - Run `bun smoke` after a build when the runtime surface or the claimed runtime support changes.
