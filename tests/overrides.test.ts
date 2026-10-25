@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test"
 
 import {
-  CrossRuntimeDependencyError,
   createRuntime,
   createValueOverride,
+  CrossRuntimeDependencyError,
   LeakedChildScopeError,
   MissingProviderError,
   OwnedProvisionReuseError,
@@ -13,7 +13,7 @@ import {
 } from "ripple-di"
 
 const delay = (milliseconds: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+  new Promise<void>(resolve => setTimeout(resolve, milliseconds))
 
 // A short timer forces a real async context switch without slowing the suite.
 const ASYNC_CONTEXT_DELAY_MS = 5
@@ -23,9 +23,9 @@ describe("override runner", () => {
     const runtime = createRuntime()
     const useSession = runtime.defineDependency<object>({ name: "session" })
 
-    expect(() =>
-      runtime.createOverrideRunner([provide(useSession, {})] as never),
-    ).toThrow(TypeError)
+    expect(() => runtime.createOverrideRunner([provide(useSession, {})] as never)).toThrow(
+      TypeError,
+    )
   })
 
   describe("run", () => {
@@ -34,10 +34,9 @@ describe("override runner", () => {
       const useSession = runtime.defineDependency<{ id: number }>({
         name: "session",
       })
-      const useRequest = runtime.defineDependency(
-        () => ({ session: useSession() }),
-        { name: "request" },
-      )
+      const useRequest = runtime.defineDependency(() => ({ session: useSession() }), {
+        name: "request",
+      })
       const disposed: number[] = []
       let nextSessionId = 1
       const sessions = runtime.createOverrideRunner(() => [
@@ -45,7 +44,7 @@ describe("override runner", () => {
           useSession,
           { id: nextSessionId++ },
           {
-            dispose: (session) => {
+            dispose: session => {
               disposed.push(session.id)
             },
           },
@@ -53,7 +52,7 @@ describe("override runner", () => {
       ])
 
       const first = await sessions.run(() => useRequest())
-      const second = await sessions.run((scope) => scope.resolve(useRequest))
+      const second = await sessions.run(scope => scope.resolve(useRequest))
 
       expect(first.session.id).toBe(1)
       expect(second.session.id).toBe(2)
@@ -111,17 +110,10 @@ describe("override runner", () => {
       const runtime = createRuntime()
       const useRegion = runtime.defineDependency<string>({ name: "region" })
       const useLabel = runtime.defineDependency<string>({ name: "label" })
-      const labels = runtime.createOverrideRunner(() => [
-        provide(useLabel, "inner"),
-      ])
-      const scope = runtime.createScope([
-        provide(useRegion, "eu"),
-        provide(useLabel, "outer"),
-      ])
+      const labels = runtime.createOverrideRunner(() => [provide(useLabel, "inner")])
+      const scope = runtime.createScope([provide(useRegion, "eu"), provide(useLabel, "outer")])
 
-      const label = await scope.run(() =>
-        labels.run(() => `${useRegion()}/${useLabel()}`),
-      )
+      const label = await scope.run(() => labels.run(() => `${useRegion()}/${useLabel()}`))
 
       expect(label).toBe("eu/inner")
       expect(scope.resolve(useLabel)).toBe("outer")
@@ -136,9 +128,7 @@ describe("override runner", () => {
       const sessions = runtime.createOverrideRunner(() => shared)
 
       await sessions.run(() => {})
-      await expect(sessions.run(() => {})).rejects.toThrow(
-        OwnedProvisionReuseError,
-      )
+      await expect(sessions.run(() => {})).rejects.toThrow(OwnedProvisionReuseError)
       await runtime.dispose()
     })
 
@@ -160,13 +150,9 @@ describe("override runner", () => {
       const runtime = createRuntime({ name: "application" })
       const other = createRuntime({ name: "other" })
       const useForeign = other.defineDependency<string>({ name: "foreign" })
-      const foreign = runtime.createOverrideRunner(() => [
-        provide(useForeign, "value"),
-      ])
+      const foreign = runtime.createOverrideRunner(() => [provide(useForeign, "value")])
 
-      await expect(foreign.run(() => {})).rejects.toThrow(
-        CrossRuntimeDependencyError,
-      )
+      await expect(foreign.run(() => {})).rejects.toThrow(CrossRuntimeDependencyError)
       await other.dispose()
       await runtime.dispose()
     })
@@ -203,12 +189,12 @@ describe("override runner", () => {
 
       const error = await runtime
         .createOverrideRunner(() => [])
-        .run((scope) => {
+        .run(scope => {
           leaked = scope.createScope()
         })
         .then(
           () => undefined,
-          (reason) => reason,
+          reason => reason,
         )
 
       expect(error).toBeInstanceOf(LeakedChildScopeError)
@@ -230,15 +216,13 @@ describe("override runner", () => {
           useSession,
           { id: nextSessionId++ },
           {
-            dispose: (session) => {
+            dispose: session => {
               disposed.push(session.id)
             },
           },
         ),
       ])
-      const readSession = sessions.wrap(
-        (suffix: string) => useSession().id + suffix,
-      )
+      const readSession = sessions.wrap((suffix: string) => useSession().id + suffix)
 
       expect(await readSession("a")).toBe("1a")
       expect(await readSession("b")).toBe("2b")
@@ -250,9 +234,7 @@ describe("override runner", () => {
     it("keeps the arguments and the receiver", async () => {
       const runtime = createRuntime()
       const useLabel = runtime.defineDependency<string>({ name: "label" })
-      const labels = runtime.createOverrideRunner(() => [
-        provide(useLabel, "scoped"),
-      ])
+      const labels = runtime.createOverrideRunner(() => [provide(useLabel, "scoped")])
       const service = {
         prefix: "service",
         describe: labels.wrap(function (this: { prefix: string }, ...parts) {
@@ -260,17 +242,13 @@ describe("override runner", () => {
         }),
       }
 
-      expect(await service.describe("first", "second")).toBe(
-        "service/scoped/first/second",
-      )
+      expect(await service.describe("first", "second")).toBe("service/scoped/first/second")
       await runtime.dispose()
     })
 
     it("creates nothing before the first call", async () => {
       const runtime = createRuntime()
-      const wrapped = runtime
-        .createOverrideRunner(() => [])
-        .wrap(() => "called")
+      const wrapped = runtime.createOverrideRunner(() => []).wrap(() => "called")
 
       // An installation rejects live scopes, so an early scope would fail here.
       const installation = runtime.install([])
@@ -292,10 +270,7 @@ describe("override runner", () => {
         return useTenant()
       })
 
-      const [slow, fast] = await Promise.all([
-        read(ASYNC_CONTEXT_DELAY_MS),
-        read(0),
-      ])
+      const [slow, fast] = await Promise.all([read(ASYNC_CONTEXT_DELAY_MS), read(0)])
 
       expect(slow).toBe("tenant-1")
       expect(fast).toBe("tenant-2")
@@ -333,21 +308,15 @@ describe("override runner", () => {
       const runtime = createRuntime()
       const useLabel = runtime.defineDependency<string>({ name: "label" })
       const useTenant = runtime.defineDependency<string>({ name: "tenant" })
-      const sessions = runtime.createOverrideRunner(() => [
-        provide(useLabel, "session"),
-      ])
+      const sessions = runtime.createOverrideRunner(() => [provide(useLabel, "session")])
       const tenants = sessions.extend(() => [
         provide(useLabel, "tenant-session"),
         provide(useTenant, "acme"),
       ])
 
-      expect(await tenants.run(() => `${useLabel()}/${useTenant()}`)).toBe(
-        "tenant-session/acme",
-      )
+      expect(await tenants.run(() => `${useLabel()}/${useTenant()}`)).toBe("tenant-session/acme")
       expect(await sessions.run(() => useLabel())).toBe("session")
-      await expect(sessions.run(() => useTenant())).rejects.toThrow(
-        MissingProviderError,
-      )
+      await expect(sessions.run(() => useTenant())).rejects.toThrow(MissingProviderError)
       await runtime.dispose()
     })
 
@@ -378,8 +347,7 @@ describe("override runner", () => {
           },
         ),
       ])
-      const read = () =>
-        tenants.run(() => ({ session: useSession(), tenant: useTenant() }))
+      const read = () => tenants.run(() => ({ session: useSession(), tenant: useTenant() }))
 
       const first = await read()
       const second = await read()
@@ -444,13 +412,13 @@ describe("override runner", () => {
       const failure = new Error("handler")
 
       const error = await tenants
-        .run((scope) => {
+        .run(scope => {
           scope.createScope()
           throw failure
         })
         .then(
           () => undefined,
-          (reason) => reason as AggregateError,
+          reason => reason as AggregateError,
         )
 
       // Every layer reports its own failures, so the layer that was extended
@@ -463,13 +431,9 @@ describe("override runner", () => {
 
       const tenantErrors = (tenantFailure as AggregateError).errors
       expect(tenantErrors).toContain(failure)
+      expect(tenantErrors.some(item => item instanceof LeakedChildScopeError)).toBe(true)
       expect(
-        tenantErrors.some((item) => item instanceof LeakedChildScopeError),
-      ).toBe(true)
-      expect(
-        tenantErrors.some(
-          (item) => item instanceof Error && item.message === "tenant cleanup",
-        ),
+        tenantErrors.some(item => item instanceof Error && item.message === "tenant cleanup"),
       ).toBe(true)
       await runtime.dispose()
     })
@@ -485,7 +449,7 @@ describe("value override", () => {
     const withClient = runtime.createValueOverride(useClient)
 
     const direct = await withClient({ id: "direct" }, () => useClient().id)
-    const delayed = await withClient({ id: "delayed" }, async (scope) => {
+    const delayed = await withClient({ id: "delayed" }, async scope => {
       await delay(ASYNC_CONTEXT_DELAY_MS)
       return `${useClient().id}/${scope.resolve(useClient).id}`
     })
@@ -534,7 +498,7 @@ describe("value override", () => {
     const closed: string[] = []
     const useConnection = runtime.defineDependency<{ id: string }>({
       name: "connection",
-      dispose: (connection) => void closed.push(connection.id),
+      dispose: connection => void closed.push(connection.id),
     })
     const withConnection = runtime.createValueOverride(useConnection, {
       dispose: true,
@@ -560,7 +524,7 @@ describe("value override", () => {
     const released: string[] = []
     const useLease = runtime.defineDependency<{ id: string }>({ name: "lease" })
     const withLease = runtime.createValueOverride(useLease, {
-      dispose: (lease) => void released.push(lease.id),
+      dispose: lease => void released.push(lease.id),
     })
 
     await withLease({ id: "lease-1" }, () => useLease().id)
@@ -574,12 +538,8 @@ describe("value override", () => {
     const other = createRuntime({ name: "other" })
     const useClient = owner.defineDependency<object>({ name: "client" })
 
-    expect(() => other.createValueOverride(useClient)).toThrow(
-      CrossRuntimeDependencyError,
-    )
-    expect(() => createValueOverride(useClient)).toThrow(
-      CrossRuntimeDependencyError,
-    )
+    expect(() => other.createValueOverride(useClient)).toThrow(CrossRuntimeDependencyError)
+    expect(() => createValueOverride(useClient)).toThrow(CrossRuntimeDependencyError)
 
     await owner.dispose()
     await other.dispose()

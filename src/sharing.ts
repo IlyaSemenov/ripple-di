@@ -1,4 +1,5 @@
 import { version } from "../package.json"
+
 import type * as PublicApi from "./api"
 
 /** Public API of one package copy, used as the implementation of a realm. */
@@ -22,9 +23,9 @@ const sharedImplementationKey = Symbol.for("ripple-di.shared-implementation")
  * internal metadata and protocols are compatible only within one release.
  */
 function readSharedImplementation(): SharedImplementation | undefined {
-  const record = (globalThis as Record<symbol, unknown>)[
-    sharedImplementationKey
-  ] as SharedImplementation | undefined
+  const record = (globalThis as Record<symbol, unknown>)[sharedImplementationKey] as
+    | SharedImplementation
+    | undefined
   if (record && record.version !== version) {
     throw new Error(
       `ripple-di ${version} cannot join the shared implementation registered ` +

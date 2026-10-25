@@ -2,18 +2,8 @@ import { nodeOf } from "./dependency"
 import { DetachedContextOwnedProvisionError, ScopeClosedError } from "./errors"
 import type { BoundProvider, ScopeContext } from "./graph"
 import { scopeParent } from "./graph"
-import {
-  type Provision,
-  provide,
-  provideFactory,
-  withoutProvider,
-} from "./provide"
-import {
-  closeTemporaryScopes,
-  collectError,
-  throwCollected,
-  withChildScope,
-} from "./scope"
+import { provide, provideFactory, type Provision, withoutProvider } from "./provide"
+import { closeTemporaryScopes, collectError, throwCollected, withChildScope } from "./scope"
 
 /** Reproduces the current scope layers beneath a separate lifecycle parent. */
 export async function runDetachedScopeContext<TCallbackResult>(
@@ -35,12 +25,7 @@ function snapshotDetachedLayers(
   operation: string,
 ): readonly (readonly Provision[])[] {
   if (current.state !== "active") {
-    throw new ScopeClosedError(
-      operation,
-      current.name,
-      current.id,
-      current.state,
-    )
+    throw new ScopeClosedError(operation, current.name, current.id, current.state)
   }
 
   const scopes: ScopeContext[] = []
@@ -48,17 +33,10 @@ function snapshotDetachedLayers(
 
   while (cursor !== base) {
     if (!cursor) {
-      throw new Error(
-        `Scope "${current.name}" is not beneath base scope "${base.name}".`,
-      )
+      throw new Error(`Scope "${current.name}" is not beneath base scope "${base.name}".`)
     }
     if (cursor.state === "closing" || cursor.state === "closed") {
-      throw new ScopeClosedError(
-        operation,
-        cursor.name,
-        cursor.id,
-        cursor.state,
-      )
+      throw new ScopeClosedError(operation, cursor.name, cursor.id, cursor.state)
     }
     scopes.push(cursor)
     cursor = cursor[scopeParent]
@@ -80,9 +58,7 @@ function snapshotDetachedLayers(
     }
   }
 
-  return scopes.map((scope) =>
-    [...scope.bindings.values()].map(reproduceProvision),
-  )
+  return scopes.map(scope => [...scope.bindings.values()].map(reproduceProvision))
 }
 
 /** Turns an installed binding back into the provision that created it. */
@@ -96,9 +72,7 @@ function reproduceProvision(binding: BoundProvider<unknown>): Provision {
     case "value":
       return provide(dependency, binding.spec.value)
     case "owned-value":
-      throw new Error(
-        "ripple-di lost an owned-value provision in a detached layer.",
-      )
+      throw new Error("ripple-di lost an owned-value provision in a detached layer.")
   }
 }
 
@@ -113,7 +87,7 @@ async function replayDetachedLayers<TCallbackResult>(
   if (!provisions) {
     throw new Error("ripple-di lost a detached context layer.")
   }
-  return await withChildScope(parent, provisions, (scope) =>
+  return await withChildScope(parent, provisions, scope =>
     index === layers.length - 1
       ? callback(scope)
       : replayDetachedLayers(scope, layers, index + 1, callback),
@@ -146,11 +120,7 @@ export function createDetachedScopeStream<T>(
   open: (scope: ScopeContext, signal: AbortSignal) => AsyncIterable<T>,
   { signal }: DetachedStreamOptions = {},
 ): DetachedStream<T> {
-  const layers = snapshotDetachedLayers(
-    base,
-    current,
-    "Runtime.createDetachedStream",
-  )
+  const layers = snapshotDetachedLayers(base, current, "Runtime.createDetachedStream")
   const outermost = base.createScope(layers[0] ?? [])
   let innermost = outermost
   for (const provisions of layers.slice(1)) {
@@ -200,9 +170,7 @@ export function createDetachedScopeStream<T>(
   }
 
   /** Releases the scopes and reports the given errors together with teardown failures. */
-  async function release(
-    errors: unknown[],
-  ): Promise<IteratorResult<T, undefined>> {
+  async function release(errors: unknown[]): Promise<IteratorResult<T, undefined>> {
     try {
       await close()
     } catch (error) {
@@ -289,15 +257,12 @@ export function createDetachedScopeStream<T>(
   }
 
   const stream: AsyncIterator<T, undefined> & DetachedStream<T> = {
-    next: () =>
-      stopped ? Promise.resolve(finished) : advance(() => source.next()),
+    next: () => (stopped ? Promise.resolve(finished) : advance(() => source.next())),
     return: () => finish(),
-    throw: (error) =>
+    throw: error =>
       stopped
         ? Promise.reject(error)
-        : advance(() =>
-            source.throw ? source.throw(error) : Promise.reject(error),
-          ),
+        : advance(() => (source.throw ? source.throw(error) : Promise.reject(error))),
     [Symbol.asyncIterator]: () => stream,
     [Symbol.asyncDispose]: async () => {
       await finish()
@@ -312,9 +277,7 @@ export function createDetachedScopeStream<T>(
     onAbort()
   }
   try {
-    source = innermost.run(() =>
-      open(innermost, controller.signal)[Symbol.asyncIterator](),
-    )
+    source = innermost.run(() => open(innermost, controller.signal)[Symbol.asyncIterator]())
     opened = true
   } catch (error) {
     // Nobody receives the stream, so teardown failures can only surface as

@@ -32,9 +32,6 @@ it("collects provisions and omits false and nullish inputs", async () => {
   const config = provide(useConfig, "test")
   const clock = provide(useClock, 42)
 
-  expect(collectProvisions(config, false, null, [clock], undefined)).toEqual([
-    config,
-    clock,
-  ])
+  expect(collectProvisions(config, false, null, [clock], undefined)).toEqual([config, clock])
   await runtime.dispose()
 })

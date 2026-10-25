@@ -52,8 +52,7 @@ export type AsyncMemoError = local.AsyncMemoError
 export type CrossRuntimeDependencyError = local.CrossRuntimeDependencyError
 export type CrossScopeResolutionError = local.CrossScopeResolutionError
 export type DependencyCycleError = local.DependencyCycleError
-export type DetachedContextOwnedProvisionError =
-  local.DetachedContextOwnedProvisionError
+export type DetachedContextOwnedProvisionError = local.DetachedContextOwnedProvisionError
 export type DisposerContextError = local.DisposerContextError
 export type DuplicateProviderError = local.DuplicateProviderError
 export type FactoryError = local.FactoryError

@@ -20,7 +20,7 @@ import {
 import { createQueryBuilder } from "./awaitable"
 
 const delay = (milliseconds: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+  new Promise<void>(resolve => setTimeout(resolve, milliseconds))
 
 // A short timer forces a real async context switch without slowing the suite.
 const ASYNC_CONTEXT_DELAY_MS = 5
@@ -39,9 +39,7 @@ describe("scope creation", () => {
       },
     })
 
-    expect(() => runtime.createScope([owned, owned])).toThrow(
-      DuplicateProviderError,
-    )
+    expect(() => runtime.createScope([owned, owned])).toThrow(DuplicateProviderError)
     expect(disposed).toBe(0)
     const scope = runtime.createScope([owned])
     await scope.close()
@@ -98,11 +96,9 @@ describe("ambient scope and concurrency", () => {
 
     await parent.run(async () => {
       expect(runtime.resolve(useValue)).toBe("parent")
-      expect(
-        await runtime.withOverrides([provide(useValue, "nested")], () =>
-          useValue(),
-        ),
-      ).toBe("nested")
+      expect(await runtime.withOverrides([provide(useValue, "nested")], () => useValue())).toBe(
+        "nested",
+      )
 
       child = runtime.createScope()
       expect(child.resolve(useValue)).toBe("parent")
@@ -118,11 +114,11 @@ describe("ambient scope and concurrency", () => {
     const useTenant = runtime.defineDependency<string>({ name: "tenant" })
     const installation = runtime.install(provide(useTenant, "installed"))
     let releaseTail!: () => void
-    const tailGate = new Promise<void>((resolve) => {
+    const tailGate = new Promise<void>(resolve => {
       releaseTail = resolve
     })
 
-    const detachedTail = runtime.runDetached(async (scope) => {
+    const detachedTail = runtime.runDetached(async scope => {
       await tailGate
       return `${useTenant()}/${scope.resolve(useTenant)}`
     })
@@ -143,7 +139,7 @@ describe("ambient scope and concurrency", () => {
     })
 
     const results = await Promise.all([
-      runtime.withOverrides([provide(useValue, "left")], async (scope) => {
+      runtime.withOverrides([provide(useValue, "left")], async scope => {
         const identity = useView()
         await delay(ASYNC_CONTEXT_DELAY_MS)
         expect(useView()).toBe(identity)
@@ -176,7 +172,7 @@ describe("ambient scope and concurrency", () => {
     expect(scope.run(() => useValue())).toBe("scope")
 
     let release!: () => void
-    const gate = new Promise<void>((resolve) => {
+    const gate = new Promise<void>(resolve => {
       release = resolve
     })
     let detached!: Promise<string>
@@ -197,7 +193,7 @@ describe("detached context", () => {
     const parent = runtime.createScope([provide(useValue, "parent")])
     const child = parent.createScope()
     let continueCallback!: () => void
-    const callbackGate = new Promise<void>((resolve) => {
+    const callbackGate = new Promise<void>(resolve => {
       continueCallback = resolve
     })
     let error: unknown
@@ -208,7 +204,7 @@ describe("detached context", () => {
         .runDetached(() => useValue())
         .then(
           () => undefined,
-          (reason) => reason,
+          reason => reason,
         )
     })
     const retirement = parent.retire()
@@ -230,9 +226,7 @@ describe("detached context", () => {
     const child = parent.createScope([provide(useChild, "child")])
     const retirement = parent.retire()
 
-    const value = await child.run(() =>
-      runtime.runDetached(() => `${useParent()}/${useChild()}`),
-    )
+    const value = await child.run(() => runtime.runDetached(() => `${useParent()}/${useChild()}`))
 
     expect(value).toBe("parent/child")
     await child.close()
@@ -251,7 +245,7 @@ describe("detached context", () => {
       provide(useTraceId, "application"),
     ])
     let releaseBackgroundWork!: () => void
-    const backgroundGate = new Promise<void>((resolve) => {
+    const backgroundGate = new Promise<void>(resolve => {
       releaseBackgroundWork = resolve
     })
     let backgroundTask!: Promise<readonly [string, string, object]>
@@ -260,13 +254,9 @@ describe("detached context", () => {
       [provide(useLocale, "de"), provide(useContext, sharedContext)],
       () =>
         runtime.withOverrides(provide(useTraceId, "request-42"), () => {
-          backgroundTask = runtime.runDetached(async (scope) => {
+          backgroundTask = runtime.runDetached(async scope => {
             await backgroundGate
-            return [
-              useLocale(),
-              useTraceId(),
-              scope.resolve(useContext),
-            ] as const
+            return [useLocale(), useTraceId(), scope.resolve(useContext)] as const
           })
         }),
     )
@@ -286,13 +276,13 @@ describe("detached context", () => {
     let nextInnerId = 1
     const useOuter = runtime.defineDependency<{ id: string }>({
       name: "outer",
-      dispose: (value) => {
+      dispose: value => {
         disposed.push(value.id)
       },
     })
     const useInner = runtime.defineDependency<{ id: string }>({
       name: "inner",
-      dispose: (value) => {
+      dispose: value => {
         disposed.push(value.id)
       },
     })
@@ -301,7 +291,7 @@ describe("detached context", () => {
       inner: useInner(),
     }))
     let releaseBackgroundWork!: () => void
-    const backgroundGate = new Promise<void>((resolve) => {
+    const backgroundGate = new Promise<void>(resolve => {
       releaseBackgroundWork = resolve
     })
     let sourceDerived!: ReturnType<typeof useDerived>
@@ -359,13 +349,11 @@ describe("detached context", () => {
           })
           .then(
             () => undefined,
-            (reason) => reason,
+            reason => reason,
           )
 
         expect(error).toBeInstanceOf(DetachedContextOwnedProvisionError)
-        expect(
-          (error as DetachedContextOwnedProvisionError).dependencyName,
-        ).toBe("connection")
+        expect((error as DetachedContextOwnedProvisionError).dependencyName).toBe("connection")
       },
     )
 
@@ -409,22 +397,19 @@ describe("detached context", () => {
     const useUser = runtime.defineDependency<string>({ name: "user" })
     let backgroundTask!: Promise<readonly [string, unknown]>
 
-    await runtime.withOverrides(
-      [provide(useTenant, "acme"), provide(useUser, "alice")],
-      () => {
-        backgroundTask = runtime.runDetached(() =>
-          runtime.withOverrides(withoutProvider(useUser), () => {
-            let userError: unknown
-            try {
-              useUser()
-            } catch (error) {
-              userError = error
-            }
-            return [useTenant(), userError] as const
-          }),
-        )
-      },
-    )
+    await runtime.withOverrides([provide(useTenant, "acme"), provide(useUser, "alice")], () => {
+      backgroundTask = runtime.runDetached(() =>
+        runtime.withOverrides(withoutProvider(useUser), () => {
+          let userError: unknown
+          try {
+            useUser()
+          } catch (error) {
+            userError = error
+          }
+          return [useTenant(), userError] as const
+        }),
+      )
+    })
 
     const [tenant, userError] = await backgroundTask
     expect(tenant).toBe("acme")
@@ -487,9 +472,7 @@ describe("detached stream", () => {
 
     const stream = await runtime.withOverrides(provide(useLocale, "de"), () =>
       runtime.withOverrides(provide(useTraceId, "trace-1"), () =>
-        runtime.createDetachedStream(() =>
-          repeatReads(() => `${useLocale()}/${useTraceId()}`),
-        ),
+        runtime.createDetachedStream(() => repeatReads(() => `${useLocale()}/${useTraceId()}`)),
       ),
     )
     const reader = stream[Symbol.asyncIterator]()
@@ -506,7 +489,7 @@ describe("detached stream", () => {
     let openedIn: Scope | undefined
 
     const stream = await runtime.withOverrides(provide(useLocale, "de"), () => {
-      const created = runtime.createDetachedStream((scope) => {
+      const created = runtime.createDetachedStream(scope => {
         openedWith = useLocale()
         openedIn = scope
         return repeatReads(() => useLocale())
@@ -533,9 +516,7 @@ describe("detached stream", () => {
     const stream = await runtime.withOverrides(
       provideFactory(useConnection, () => ({ id: 1 })),
       () =>
-        runtime.createDetachedStream(() =>
-          repeatReads(() => `connection-${useConnection().id}`),
-        ),
+        runtime.createDetachedStream(() => repeatReads(() => `connection-${useConnection().id}`)),
     )
     const reader = stream[Symbol.asyncIterator]()
 
@@ -598,7 +579,7 @@ describe("detached stream", () => {
     const reader = stream[Symbol.asyncIterator]()
 
     expect((await reader.next()).value).toBe("before failure")
-    expect(await reader.next().catch((error) => error)).toBe(failure)
+    expect(await reader.next().catch(error => error)).toBe(failure)
     expect(disposed).toBe(1)
     await runtime.dispose()
   })
@@ -646,21 +627,19 @@ describe("detached stream", () => {
     const stream = await runtime.withOverrides(
       provideFactory(useConnection, () => ({})),
       () =>
-        runtime.createDetachedStream(
-          (): AsyncIterable<string> => ({
-            [Symbol.asyncIterator]: () => ({
-              next: async () => {
-                useConnection()
-                return { done: false, value: "reading" }
-              },
-            }),
+        runtime.createDetachedStream((): AsyncIterable<string> => ({
+          [Symbol.asyncIterator]: () => ({
+            next: async () => {
+              useConnection()
+              return { done: false, value: "reading" }
+            },
           }),
-        ),
+        })),
     )
     const reader = stream[Symbol.asyncIterator]()
 
     expect((await reader.next()).value).toBe("reading")
-    expect(await reader.throw?.(failure).catch((error) => error)).toBe(failure)
+    expect(await reader.throw?.(failure).catch(error => error)).toBe(failure)
     expect(disposed).toBe(1)
     await runtime.dispose()
   })
@@ -671,17 +650,15 @@ describe("detached stream", () => {
     let closedIn: string | undefined
 
     const stream = await runtime.withOverrides(provide(useLocale, "de"), () =>
-      runtime.createDetachedStream(
-        (): AsyncIterable<string> => ({
-          [Symbol.asyncIterator]: () => ({
-            next: async () => ({ done: false, value: useLocale() }),
-            return: async () => {
-              closedIn = useLocale()
-              return { done: true, value: undefined }
-            },
-          }),
+      runtime.createDetachedStream((): AsyncIterable<string> => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => ({ done: false, value: useLocale() }),
+          return: async () => {
+            closedIn = useLocale()
+            return { done: true, value: undefined }
+          },
         }),
-      ),
+      })),
     )
 
     await stream[Symbol.asyncDispose]()
@@ -729,17 +706,14 @@ describe("detached stream", () => {
     })
     let opened = false
 
-    await runtime.withOverrides(
-      provide(useConnection, {}, { dispose: () => {} }),
-      () => {
-        expect(() =>
-          runtime.createDetachedStream(() => {
-            opened = true
-            return repeatReads(() => "unreachable")
-          }),
-        ).toThrow(DetachedContextOwnedProvisionError)
-      },
-    )
+    await runtime.withOverrides(provide(useConnection, {}, { dispose: () => {} }), () => {
+      expect(() =>
+        runtime.createDetachedStream(() => {
+          opened = true
+          return repeatReads(() => "unreachable")
+        }),
+      ).toThrow(DetachedContextOwnedProvisionError)
+    })
 
     expect(opened).toBe(false)
     const installation = runtime.install([])
@@ -773,9 +747,7 @@ describe("detached stream", () => {
     expect((await reader.next()).value).toBe("reading")
     await installation.close()
     expect(disposed).toBe(1)
-    expect(await reader.next().catch((error) => error)).toBeInstanceOf(
-      ScopeClosedError,
-    )
+    expect(await reader.next().catch(error => error)).toBeInstanceOf(ScopeClosedError)
     expect(await reader.return?.()).toEqual({ done: true, value: undefined })
     await runtime.dispose()
   })
@@ -784,13 +756,13 @@ describe("detached stream", () => {
 describe("detached stream cancellation", () => {
   it.each(["before opening", "during opening", "before reading"])(
     "closes an unread source when cancelled %s",
-    async (timing) => {
+    async timing => {
       const runtime = createRuntime()
       const controller = new AbortController()
       const reason = new Error("request cancelled")
       let disposed = 0
       let notifyDisposed!: () => void
-      const disposal = new Promise<void>((resolve) => {
+      const disposal = new Promise<void>(resolve => {
         notifyDisposed = resolve
       })
       const useConnection = runtime.defineDependency<object>({
@@ -844,7 +816,7 @@ describe("detached stream cancellation", () => {
 
   it.each(["external", "return", "asyncDispose"])(
     "interrupts a parked generator through %s and keeps its finally scope alive",
-    async (method) => {
+    async method => {
       const runtime = createRuntime()
       const controller = new AbortController()
       let disposed = 0
@@ -854,15 +826,15 @@ describe("detached stream cancellation", () => {
         },
       })
       let notifyWaiting!: () => void
-      const waiting = new Promise<void>((resolve) => {
+      const waiting = new Promise<void>(resolve => {
         notifyWaiting = resolve
       })
       let notifyFinalizing!: () => void
-      const finalizing = new Promise<void>((resolve) => {
+      const finalizing = new Promise<void>(resolve => {
         notifyFinalizing = resolve
       })
       let completeFinalization!: () => void
-      const finalization = new Promise<void>((resolve) => {
+      const finalization = new Promise<void>(resolve => {
         completeFinalization = resolve
       })
       let finalized = 0
@@ -895,9 +867,7 @@ describe("detached stream cancellation", () => {
       expect((await reader.next()).value).toBe("ready")
       const pendingRead = reader.next()
       await waiting
-      let reentrantClose:
-        | ReturnType<NonNullable<typeof reader.return>>
-        | undefined
+      let reentrantClose: ReturnType<NonNullable<typeof reader.return>> | undefined
       streamSignal.addEventListener(
         "abort",
         () => {
@@ -938,11 +908,11 @@ describe("detached stream cancellation", () => {
       },
     })
     let unblockRead!: () => void
-    const readGate = new Promise<void>((resolve) => {
+    const readGate = new Promise<void>(resolve => {
       unblockRead = resolve
     })
     let notifyReturned!: () => void
-    const returned = new Promise<void>((resolve) => {
+    const returned = new Promise<void>(resolve => {
       notifyReturned = resolve
     })
     let reads = 0
@@ -999,11 +969,11 @@ describe("detached stream cancellation", () => {
       },
     })
     let unblock!: () => void
-    const gate = new Promise<void>((resolve) => {
+    const gate = new Promise<void>(resolve => {
       unblock = resolve
     })
     let notifyWaiting!: () => void
-    const waiting = new Promise<void>((resolve) => {
+    const waiting = new Promise<void>(resolve => {
       notifyWaiting = resolve
     })
     let finalized = false
@@ -1044,7 +1014,7 @@ describe("detached stream cancellation", () => {
 
   it.each(["next", "throw"])(
     "cancels the signal when an uncaught %s failure ends the source",
-    async (method) => {
+    async method => {
       const runtime = createRuntime()
       let disposed = 0
       const useConnection = runtime.defineDependency<object>({
@@ -1071,9 +1041,9 @@ describe("detached stream cancellation", () => {
       )
       const reader = stream[Symbol.asyncIterator]()
       await reader.next()
-      await expect(
-        method === "next" ? reader.next() : reader.throw?.(failure),
-      ).rejects.toBe(failure)
+      await expect(method === "next" ? reader.next() : reader.throw?.(failure)).rejects.toBe(
+        failure,
+      )
       expect(streamSignal.aborted).toBe(true)
       expect(disposed).toBe(1)
       expect(await reader.next()).toEqual({ done: true, value: undefined })
@@ -1085,7 +1055,7 @@ describe("detached stream cancellation", () => {
     const runtime = createRuntime()
     const controller = new AbortController()
     let notifyWaiting!: () => void
-    const waiting = new Promise<void>((resolve) => {
+    const waiting = new Promise<void>(resolve => {
       notifyWaiting = resolve
     })
     const stream = runtime.createDetachedStream(
@@ -1110,7 +1080,7 @@ describe("detached stream cancellation", () => {
 
   it.each([new Error("request cancelled"), "custom reason", null])(
     "recognizes a custom cancellation reason in both next() and return(): %p",
-    async (reason) => {
+    async reason => {
       const runtime = createRuntime()
       const controller = new AbortController()
       let disposed = 0
@@ -1129,11 +1099,7 @@ describe("detached stream cancellation", () => {
                 [Symbol.asyncIterator]: () => ({
                   next: () =>
                     new Promise<IteratorResult<never>>((_resolve, reject) => {
-                      signal.addEventListener(
-                        "abort",
-                        () => reject(signal.reason),
-                        { once: true },
-                      )
+                      signal.addEventListener("abort", () => reject(signal.reason), { once: true })
                     }),
                   return: async () => {
                     signal.throwIfAborted()
@@ -1157,15 +1123,13 @@ describe("detached stream cancellation", () => {
 
   it("recognizes a primitive's AbortError thrown by source.return()", async () => {
     const runtime = createRuntime()
-    const stream = runtime.createDetachedStream(
-      async function* (_scope, signal) {
-        try {
-          yield "ready"
-        } finally {
-          await abortableDelay(60_000, undefined, { signal })
-        }
-      },
-    )
+    const stream = runtime.createDetachedStream(async function* (_scope, signal) {
+      try {
+        yield "ready"
+      } finally {
+        await abortableDelay(60_000, undefined, { signal })
+      }
+    })
     const reader = stream[Symbol.asyncIterator]()
     await reader.next()
     expect(await reader.return?.()).toEqual({ done: true, value: undefined })
@@ -1190,19 +1154,20 @@ describe("detached stream cancellation", () => {
 
   it.each(["read", "finally"])(
     "preserves a real %s error from an outstanding read during cancellation",
-    async (stage) => {
+    async stage => {
       const runtime = createRuntime()
       const controller = new AbortController()
       const failure = new Error("source failed")
       const stream = runtime.createDetachedStream(
+        // oxlint-disable-next-line require-yield -- the source only fails, so it never yields.
         async function* (_scope, signal) {
           try {
-            await new Promise<void>((resolve) => {
+            await new Promise<void>(resolve => {
               signal.addEventListener("abort", () => resolve(), { once: true })
             })
             if (stage === "read") throw failure
           } finally {
-            // biome-ignore lint/correctness/noUnsafeFinally: preserving a source finalization failure is the subject under test.
+            // oxlint-disable-next-line no-unsafe-finally -- preserving a source finalization failure is the subject under test.
             if (stage === "finally") throw failure
           }
         },
@@ -1224,7 +1189,7 @@ describe("detached stream cancellation", () => {
     const disposalFailure = new DOMException("disposal failed", "AbortError")
     let disposed = 0
     let notifyDisposed!: () => void
-    const disposal = new Promise<void>((resolve) => {
+    const disposal = new Promise<void>(resolve => {
       notifyDisposed = resolve
     })
     const useConnection = runtime.defineDependency<object>({
@@ -1243,7 +1208,7 @@ describe("detached stream cancellation", () => {
             try {
               yield "ready"
             } finally {
-              // biome-ignore lint/correctness/noUnsafeFinally: aggregating source finalization and disposal failures is the subject under test.
+              // oxlint-disable-next-line no-unsafe-finally -- aggregating source finalization and disposal failures is the subject under test.
               throw sourceFailure
             }
           },
@@ -1258,10 +1223,7 @@ describe("detached stream cancellation", () => {
       (error: unknown) => error,
     )
     expect(error).toBeInstanceOf(AggregateError)
-    expect((error as AggregateError).errors).toEqual([
-      sourceFailure,
-      disposalFailure,
-    ])
+    expect((error as AggregateError).errors).toEqual([sourceFailure, disposalFailure])
     await expect(reader.return?.()).rejects.toBe(error)
     expect(await reader.next()).toEqual({ done: true, value: undefined })
     expect(disposed).toBe(1)
@@ -1294,15 +1256,12 @@ describe("owned value lifecycle", () => {
     const runtime = createRuntime()
     const useScopeOwner = runtime.defineDependency<object>()
     let disposed = 0
-    const useOwnedValue = runtime.defineDependency(
-      () => ({ owner: useScopeOwner() }),
-      {
-        name: "owned-value",
-        dispose: () => {
-          disposed += 1
-        },
+    const useOwnedValue = runtime.defineDependency(() => ({ owner: useScopeOwner() }), {
+      name: "owned-value",
+      dispose: () => {
+        disposed += 1
       },
-    )
+    })
     const child = runtime.createScope([provide(useScopeOwner, {})])
     child.resolve(useOwnedValue)
 
@@ -1373,9 +1332,7 @@ describe("owned value lifecycle", () => {
         disposals.push("borrowed")
       },
     }
-    const ownedScope = runtime.createScope(
-      provide(useResource, owned, { dispose: true }),
-    )
+    const ownedScope = runtime.createScope(provide(useResource, owned, { dispose: true }))
     const borrowedScope = runtime.createScope(provide(useResource, borrowed))
 
     owned[Symbol.asyncDispose] = async () => {
@@ -1431,14 +1388,12 @@ describe("owned value lifecycle", () => {
     const disposed: object[] = []
     const useOwnedValue = runtime.defineDependency(() => ({}), {
       name: "owned-value",
-      dispose: (value) => {
+      dispose: value => {
         disposed.push(value)
       },
     })
     const value = {}
-    const scope = runtime.createScope([
-      provide(useOwnedValue, value, { dispose: true }),
-    ])
+    const scope = runtime.createScope([provide(useOwnedValue, value, { dispose: true })])
 
     await scope.close()
     expect(disposed).toEqual([value])
@@ -1450,14 +1405,12 @@ describe("owned value lifecycle", () => {
     const disposed: object[] = []
     const useOwnedValue = runtime.defineDependency(() => ({}), {
       name: "owned-value",
-      dispose: (value) => {
+      dispose: value => {
         disposed.push(value)
       },
     })
     const value = {}
-    const scope = runtime.createScope([
-      provideFactory(useOwnedValue, () => value),
-    ])
+    const scope = runtime.createScope([provideFactory(useOwnedValue, () => value)])
 
     expect(scope.resolve(useOwnedValue)).toBe(value)
     expect(disposed).toEqual([])
@@ -1473,7 +1426,7 @@ describe("owned value lifecycle", () => {
     const disposed: object[] = []
     const useExternal = runtime.defineDependency<object>({
       name: "external",
-      dispose: (value) => {
+      dispose: value => {
         disposed.push(value)
       },
     })
@@ -1485,16 +1438,12 @@ describe("owned value lifecycle", () => {
     expect(disposed).toEqual([])
 
     const owned = {}
-    const ownedScope = runtime.createScope([
-      provide(useExternal, owned, { dispose: true }),
-    ])
+    const ownedScope = runtime.createScope([provide(useExternal, owned, { dispose: true })])
     await ownedScope.close()
     expect(disposed).toEqual([owned])
 
     const created = {}
-    const installation = runtime.install([
-      provideFactory(useExternal, () => created),
-    ])
+    const installation = runtime.install([provideFactory(useExternal, () => created)])
     expect(runtime.resolve(useExternal)).toBe(created)
     await installation.close()
     expect(disposed).toEqual([owned, created])
@@ -1539,15 +1488,12 @@ describe("owned value lifecycle", () => {
         order.push("dependency")
       },
     })
-    const useConsumer = runtime.defineDependency(
-      () => ({ dependency: useDependency() }),
-      {
-        name: "consumer",
-        dispose: () => {
-          order.push("consumer")
-        },
+    const useConsumer = runtime.defineDependency(() => ({ dependency: useDependency() }), {
+      name: "consumer",
+      dispose: () => {
+        order.push("consumer")
       },
-    )
+    })
     runtime.resolve(useConsumer)
 
     await runtime.dispose()
@@ -1564,21 +1510,18 @@ describe("owned value lifecycle", () => {
         throw new Error("dependency failed")
       },
     })
-    const useConsumer = runtime.defineDependency(
-      () => ({ dependency: useDependency() }),
-      {
-        name: "consumer",
-        dispose: () => {
-          order.push("consumer")
-          throw new Error("consumer failed")
-        },
+    const useConsumer = runtime.defineDependency(() => ({ dependency: useDependency() }), {
+      name: "consumer",
+      dispose: () => {
+        order.push("consumer")
+        throw new Error("consumer failed")
       },
-    )
+    })
     runtime.resolve(useConsumer)
 
     const error = await runtime.dispose().then(
       () => undefined,
-      (reason) => reason as AggregateError,
+      reason => reason as AggregateError,
     )
     expect(error).toBeInstanceOf(AggregateError)
     expect(error?.errors).toHaveLength(2)
@@ -1595,10 +1538,7 @@ describe("owned value lifecycle", () => {
     const useContext = runtime.defineDependency(() => "root", {
       name: "context",
     })
-    const child = runtime.createScope([
-      provide(useOwner, {}),
-      provide(useContext, "child"),
-    ])
+    const child = runtime.createScope([provide(useOwner, {}), provide(useContext, "child")])
     const operations: readonly [string, () => void | Promise<void>][] = [
       [
         "Dependency read",
@@ -1621,14 +1561,8 @@ describe("owned value lifecycle", () => {
           runtime.createDetachedStream(async function* () {})
         },
       ],
-      [
-        "OverrideRunner.run",
-        () => runtime.createOverrideRunner(() => []).run(() => {}),
-      ],
-      [
-        "ValueOverride",
-        () => runtime.createValueOverride(useContext)("value", () => {}),
-      ],
+      ["OverrideRunner.run", () => runtime.createOverrideRunner(() => []).run(() => {})],
+      ["ValueOverride", () => runtime.createValueOverride(useContext)("value", () => {})],
       ["Runtime.dispose", () => runtime.dispose()],
       ["Installation.close", () => installation.close()],
       ["Installation.close (closed)", () => closedInstallation.close()],
@@ -1655,7 +1589,7 @@ describe("owned value lifecycle", () => {
 
     const error = await child.close().then(
       () => undefined,
-      (reason) => reason as AggregateError,
+      reason => reason as AggregateError,
     )
     expect(error).toBeInstanceOf(AggregateError)
     expect(error?.errors).toHaveLength(operations.length)
@@ -1687,15 +1621,12 @@ describe("owned value lifecycle", () => {
       name: "context",
     })
     let detachedRead: Promise<string> | undefined
-    const useOwnedValue = runtime.defineDependency(
-      () => ({ owner: useOwner() }),
-      {
-        name: "owned-value",
-        dispose: () => {
-          detachedRead = delay(ASYNC_CONTEXT_DELAY_MS).then(() => useContext())
-        },
+    const useOwnedValue = runtime.defineDependency(() => ({ owner: useOwner() }), {
+      name: "owned-value",
+      dispose: () => {
+        detachedRead = delay(ASYNC_CONTEXT_DELAY_MS).then(() => useContext())
       },
-    )
+    })
     const child = runtime.createScope([provide(useOwner, {})])
     child.resolve(useOwnedValue)
 
@@ -1707,15 +1638,12 @@ describe("owned value lifecycle", () => {
   it("releases child membership even when its disposer fails", async () => {
     const runtime = createRuntime()
     const useScopeOwner = runtime.defineDependency<object>()
-    const useBad = runtime.defineDependency(
-      () => ({ owner: useScopeOwner() }),
-      {
-        name: "bad",
-        dispose: () => {
-          throw new Error("bad dispose")
-        },
+    const useBad = runtime.defineDependency(() => ({ owner: useScopeOwner() }), {
+      name: "bad",
+      dispose: () => {
+        throw new Error("bad dispose")
       },
-    )
+    })
     const parent = runtime.createScope()
     const child = parent.createScope([provide(useScopeOwner, {})])
     child.resolve(useBad)
@@ -1763,25 +1691,19 @@ describe("retire and close", () => {
     const runtime = createRuntime()
     const useScopeOwner = runtime.defineDependency<object>()
     const closed: string[] = []
-    const useBad = runtime.defineDependency(
-      () => ({ owner: useScopeOwner() }),
-      {
-        name: "bad",
-        dispose: () => {
-          closed.push("bad")
-          throw new Error("bad")
-        },
+    const useBad = runtime.defineDependency(() => ({ owner: useScopeOwner() }), {
+      name: "bad",
+      dispose: () => {
+        closed.push("bad")
+        throw new Error("bad")
       },
-    )
-    const useGood = runtime.defineDependency(
-      () => ({ owner: useScopeOwner() }),
-      {
-        name: "good",
-        dispose: () => {
-          closed.push("good")
-        },
+    })
+    const useGood = runtime.defineDependency(() => ({ owner: useScopeOwner() }), {
+      name: "good",
+      dispose: () => {
+        closed.push("good")
       },
-    )
+    })
     const parent = runtime.createScope()
     const badChild = parent.createScope([provide(useScopeOwner, {})])
     const goodChild = parent.createScope()
@@ -1801,7 +1723,7 @@ describe("retire and close", () => {
     const useDb = runtime.defineDependency<object>({ name: "db" })
     const useBlocker = runtime.defineDependency<object>()
     let releaseCleanup!: () => void
-    const cleanup = new Promise<void>((resolve) => {
+    const cleanup = new Promise<void>(resolve => {
       releaseCleanup = resolve
     })
     const owner = runtime.createScope(provideFactory(useDb, () => ({})))
@@ -1862,7 +1784,7 @@ describe("withOverrides cleanup", () => {
     })
     const parent = runtime.createScope([provide(useValue, "parent")])
 
-    const value = await parent.withOverrides([], (scope) => {
+    const value = await parent.withOverrides([], scope => {
       expect(useValue()).toBe("parent")
       return scope.resolve(useValue)
     })
@@ -1889,19 +1811,16 @@ describe("withOverrides cleanup", () => {
     // The callback result is awaited like any other promise, so returning the
     // builder itself runs the query instead of handing the builder back, and
     // the scope closes only after that query settles.
-    const rows = await runtime.withOverrides([provide(useUrl, "scoped")], () =>
-      useQueryBuilder(),
-    )
+    const rows = await runtime.withOverrides([provide(useUrl, "scoped")], () => useQueryBuilder())
     expect(rows).toEqual(["rows from scoped"])
     expect(events).toEqual(["query", "dispose"])
 
     // Wrapping the builder avoids the await, but the caller receives a value
     // whose scope has already closed.
     events.length = 0
-    const wrapped = await runtime.withOverrides(
-      [provide(useUrl, "scoped")],
-      () => ({ builder: useQueryBuilder() }),
-    )
+    const wrapped = await runtime.withOverrides([provide(useUrl, "scoped")], () => ({
+      builder: useQueryBuilder(),
+    }))
     expect(wrapped.builder.url).toBe("scoped")
     expect(events).toEqual(["dispose"])
 
@@ -1919,30 +1838,22 @@ describe("withOverrides cleanup", () => {
   it("always closes its scope after success or callback failure", async () => {
     const runtime = createRuntime()
     const useScopeOwner = runtime.defineDependency<object>()
-    const useOwnedValue = runtime.defineDependency(
-      () => ({ owner: useScopeOwner() }),
-      {
-        name: "owned-value",
-      },
-    )
+    const useOwnedValue = runtime.defineDependency(() => ({ owner: useScopeOwner() }), {
+      name: "owned-value",
+    })
     let successfulScope: Scope | undefined
-    const result = await runtime.withOverrides(
-      [provide(useScopeOwner, {})],
-      (scope) => {
-        successfulScope = scope
-        scope.resolve(useOwnedValue)
-        return CALLBACK_RESULT
-      },
-    )
+    const result = await runtime.withOverrides([provide(useScopeOwner, {})], scope => {
+      successfulScope = scope
+      scope.resolve(useOwnedValue)
+      return CALLBACK_RESULT
+    })
     expect(result).toBe(CALLBACK_RESULT)
-    expect(() => successfulScope?.resolve(useOwnedValue)).toThrow(
-      ScopeClosedError,
-    )
+    expect(() => successfulScope?.resolve(useOwnedValue)).toThrow(ScopeClosedError)
 
     const callbackError = new Error("callback")
     let failingScope: Scope | undefined
     await expect(
-      runtime.withOverrides([], (scope) => {
+      runtime.withOverrides([], scope => {
         failingScope = scope
         throw callbackError
       }),
@@ -1955,26 +1866,23 @@ describe("withOverrides cleanup", () => {
     const runtime = createRuntime()
     const useScopeOwner = runtime.defineDependency<object>()
     let disposed = 0
-    const useOwnedValue = runtime.defineDependency(
-      () => ({ owner: useScopeOwner() }),
-      {
-        name: "owned-value",
-        dispose: () => {
-          disposed += 1
-        },
+    const useOwnedValue = runtime.defineDependency(() => ({ owner: useScopeOwner() }), {
+      name: "owned-value",
+      dispose: () => {
+        disposed += 1
       },
-    )
+    })
     let leaked: Scope | undefined
 
     const error = await runtime
-      .withOverrides([], (scope) => {
+      .withOverrides([], scope => {
         leaked = scope.createScope([provide(useScopeOwner, {})])
         leaked.resolve(useOwnedValue)
         return "done"
       })
       .then(
         () => undefined,
-        (reason) => reason,
+        reason => reason,
       )
 
     expect(error).toBeInstanceOf(LeakedChildScopeError)
@@ -1987,39 +1895,32 @@ describe("withOverrides cleanup", () => {
   it("preserves callback, leak, and cleanup errors together", async () => {
     const runtime = createRuntime()
     const useScopeOwner = runtime.defineDependency<object>()
-    const useBad = runtime.defineDependency(
-      () => ({ owner: useScopeOwner() }),
-      {
-        name: "bad",
-        dispose: () => {
-          throw new Error("cleanup")
-        },
+    const useBad = runtime.defineDependency(() => ({ owner: useScopeOwner() }), {
+      name: "bad",
+      dispose: () => {
+        throw new Error("cleanup")
       },
-    )
+    })
     const callbackError = new Error("callback")
 
     const error = await runtime
-      .withOverrides([], (scope) => {
+      .withOverrides([], scope => {
         const leaked = scope.createScope([provide(useScopeOwner, {})])
         leaked.resolve(useBad)
         throw callbackError
       })
       .then(
         () => undefined,
-        (reason) => reason as AggregateError,
+        reason => reason as AggregateError,
       )
 
     expect(error).toBeInstanceOf(AggregateError)
     expect(error?.errors).toHaveLength(3)
     expect(error?.errors).toContain(callbackError)
-    expect(
-      error?.errors.some((item) => item instanceof LeakedChildScopeError),
-    ).toBe(true)
-    expect(
-      error?.errors.some(
-        (item) => item instanceof Error && item.message === "cleanup",
-      ),
-    ).toBe(true)
+    expect(error?.errors.some(item => item instanceof LeakedChildScopeError)).toBe(true)
+    expect(error?.errors.some(item => item instanceof Error && item.message === "cleanup")).toBe(
+      true,
+    )
     await runtime.dispose()
   })
 })

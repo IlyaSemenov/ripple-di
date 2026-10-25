@@ -51,10 +51,7 @@ export function currentEvaluation(): EvaluationFrame | undefined {
 }
 
 /** Rejects scope management while same-runtime synchronous tracking is active. */
-export function assertOutsideTracking(
-  runtime: RuntimeContext,
-  operation: string,
-): void {
+export function assertOutsideTracking(runtime: RuntimeContext, operation: string): void {
   const tracking = currentTracking()
   if (
     tracking?.kind === "memo" &&
@@ -97,22 +94,15 @@ export function popTracking(frame: TrackingFrame): void {
 }
 
 /** Index of the factory evaluating this dependency and provider identity, or -1. */
-export function cycleStart(
-  node: DependencyNode<unknown>,
-  providerStamp: BindingStamp,
-): number {
+export function cycleStart(node: DependencyNode<unknown>, providerStamp: BindingStamp): number {
   return evaluationStack.findIndex(
-    (frame) =>
-      frame.node === node &&
-      frame.providerStamp.identity === providerStamp.identity,
+    frame => frame.node === node && frame.providerStamp.identity === providerStamp.identity,
   )
 }
 
 /** Names active factories and appends the failed dependency when supplied. */
-export function resolutionPath(
-  ending?: DependencyNode<unknown>,
-): readonly string[] {
-  const path = evaluationStack.map((frame) => frame.node.name)
+export function resolutionPath(ending?: DependencyNode<unknown>): readonly string[] {
+  const path = evaluationStack.map(frame => frame.node.name)
   // The failed dependency is already last when its own factory is running.
   if (ending && evaluationStack.at(-1)?.node !== ending) {
     path.push(ending.name)
@@ -136,13 +126,10 @@ export function memoCyclePath(
   endingName: string,
 ): readonly string[] | undefined {
   const start = trackingStack.findIndex(
-    (frame) =>
-      frame.kind === "memo" &&
-      frame.identity === identity &&
-      frame.receiver === receiver,
+    frame => frame.kind === "memo" && frame.identity === identity && frame.receiver === receiver,
   )
   if (start < 0) {
     return undefined
   }
-  return [...trackingStack.slice(start).map((frame) => frame.name), endingName]
+  return [...trackingStack.slice(start).map(frame => frame.name), endingName]
 }

@@ -18,10 +18,9 @@ export const useConfig = defineDependency(() => ({
   databaseUrl: process.env.DATABASE_URL,
 }))
 
-export const useDb = defineDependency(
-  () => createDb(useConfig().databaseUrl),
-  { dispose: db => db.close() },
-)
+export const useDb = defineDependency(() => createDb(useConfig().databaseUrl), {
+  dispose: db => db.close(),
+})
 
 export async function loadUsers() {
   return useDb().query("select * from users")
@@ -33,9 +32,8 @@ Now replace only the configuration for one operation:
 ```ts
 import { provide, withOverrides } from "ripple-di"
 
-const users = await withOverrides(
-  provide(useConfig, { databaseUrl: testDatabaseUrl }),
-  () => loadUsers(),
+const users = await withOverrides(provide(useConfig, { databaseUrl: testDatabaseUrl }), () =>
+  loadUsers(),
 )
 ```
 
@@ -61,19 +59,19 @@ The package is published as ESM.
 
 ## Which function do I call?
 
-| You want to                                   | Call
-| --------------------------------------------- | --------------------------------------------------
-| Define an input, derived value, or service    | `defineDependency`
-| Define an overrideable factory                | `defineFactoryDependency`
-| Supply the application's values at startup    | `install` with `provide` or `provideFactory`
-| Collect provisions from several modules       | `collectProvisions`
-| Replace values for one callback               | `withOverrides` with `provide` or `provideFactory`
-| Make a dependency unavailable                 | `withoutProvider`
-| Memoize a getter or zero-argument method      | `@memo`
-| Keep one scope open across several operations | `createScope`
-| Continue work after the current scope closes  | `runDetached`
-| Read an async source after the scope closes   | `createDetachedStream`
-| Shut everything down                          | `dispose`
+| You want to                                   | Call                                               |
+| --------------------------------------------- | -------------------------------------------------- |
+| Define an input, derived value, or service    | `defineDependency`                                 |
+| Define an overrideable factory                | `defineFactoryDependency`                          |
+| Supply the application's values at startup    | `install` with `provide` or `provideFactory`       |
+| Collect provisions from several modules       | `collectProvisions`                                |
+| Replace values for one callback               | `withOverrides` with `provide` or `provideFactory` |
+| Make a dependency unavailable                 | `withoutProvider`                                  |
+| Memoize a getter or zero-argument method      | `@memo`                                            |
+| Keep one scope open across several operations | `createScope`                                      |
+| Continue work after the current scope closes  | `runDetached`                                      |
+| Read an async source after the scope closes   | `createDetachedStream`                             |
+| Shut everything down                          | `dispose`                                          |
 
 `createValueOverride` and `createOverrideRunner` in [Advanced usage](#advanced-usage) turn overrides you write repeatedly into reusable helpers.
 
@@ -88,10 +86,7 @@ import { defineDependency, provide, withOverrides } from "ripple-di"
 
 const useTenant = defineDependency<Tenant>()
 
-await withOverrides(
-  provide(useTenant, tenant),
-  () => processRequest(),
-)
+await withOverrides(provide(useTenant, tenant), () => processRequest())
 ```
 
 Reading it without a provider throws `MissingProviderError`.
@@ -138,12 +133,8 @@ The production database is untouched.
 Override as many dependencies as you need in one call.
 
 ```ts
-await withOverrides(
-  [
-    provide(useConfig, testConfig),
-    provide(useClock, fixedClock),
-  ],
-  () => generateReport(),
+await withOverrides([provide(useConfig, testConfig), provide(useClock, fixedClock)], () =>
+  generateReport(),
 )
 ```
 
@@ -188,10 +179,9 @@ When its factory and everything it read belong to the application, the value bel
 
 ```ts
 // Wrong: every request shares this one transaction.
-const useTransaction = defineDependency(
-  () => useDb().transaction(),
-  { dispose: tx => tx.rollback() },
-)
+const useTransaction = defineDependency(() => useDb().transaction(), {
+  dispose: tx => tx.rollback(),
+})
 ```
 
 `useDb` belongs to the application, so a transaction built from it belongs to the application too.
@@ -256,10 +246,7 @@ import { dispose, install, provide } from "ripple-di"
 
 import { useTenantResolver, useWebConfig } from "./dependencies"
 
-install([
-  provide(useWebConfig, config),
-  provide(useTenantResolver, resolveTenant),
-])
+install([provide(useWebConfig, config), provide(useTenantResolver, resolveTenant)])
 
 try {
   await runApplication()
@@ -293,19 +280,14 @@ A module exports the provisions it owns, and the composition root installs them 
 ```ts
 // core/providers.ts
 export function getCoreProvisions() {
-  return [
-    provide(useDbConfig, dbConfig),
-    provide(useEmailTransport, emailTransport),
-  ]
+  return [provide(useDbConfig, dbConfig), provide(useEmailTransport, emailTransport)]
 }
 ```
 
 ```ts
 // platform/providers.ts
 export function getPlatformProvisions() {
-  return [
-    provide(useAgentChatConfig, agentChatConfig),
-  ]
+  return [provide(useAgentChatConfig, agentChatConfig)]
 }
 ```
 
@@ -313,10 +295,7 @@ export function getPlatformProvisions() {
 // startup.ts
 import { dispose, install } from "ripple-di"
 
-install(
-  getCoreProvisions(),
-  platformEnabled && getPlatformProvisions(),
-)
+install(getCoreProvisions(), platformEnabled && getPlatformProvisions())
 
 onShutdown(() => dispose())
 ```
@@ -354,20 +333,10 @@ Do not use it to reset state between tests — use `withOverrides` for that, or 
 Install the wiring the suite needs once for the whole test process, from the preload or setup file the test runner already has, and give each test the values of its own.
 
 ```ts
-import {
-  createOverrideRunner,
-  createScope,
-  provide,
-  type Scope,
-  withOverrides,
-} from "ripple-di"
+import { createOverrideRunner, createScope, provide, type Scope, withOverrides } from "ripple-di"
 
 test("loads users from the test database", () =>
-  withOverrides(
-    provide(useConfig, testConfig),
-    () => loadUsers(),
-  ),
-)
+  withOverrides(provide(useConfig, testConfig), () => loadUsers()))
 ```
 
 The scope lives exactly as long as that callback, so tests running in parallel cannot see one another's overrides.
@@ -401,12 +370,16 @@ beforeAll(() => scope.run(() => {}))
 When every test in a file needs the same overrides in a separate scope, a runner applies them to each test independently.
 
 ```ts
-const testConfigOverrides = createOverrideRunner(() =>
-  provide(useConfig, testConfig),
-)
+const testConfigOverrides = createOverrideRunner(() => provide(useConfig, testConfig))
 
-test("lists users", testConfigOverrides.wrap(() => listUsers()))
-test("creates a user", testConfigOverrides.wrap(() => createUser()))
+test(
+  "lists users",
+  testConfigOverrides.wrap(() => listUsers()),
+)
+test(
+  "creates a user",
+  testConfigOverrides.wrap(() => createUser()),
+)
 ```
 
 Some test runners repeat suite hooks in one process without evaluating the preload again, such as Bun with `--rerun-each`.
@@ -452,7 +425,8 @@ import { defineFactoryDependency } from "ripple-di"
 
 const useLog = defineFactoryDependency(
   (area: string) =>
-    (...values: unknown[]) => console.log(`[${area}]`, ...values),
+    (...values: unknown[]) =>
+      console.log(`[${area}]`, ...values),
 )
 
 const billingLog = useLog("billing")
@@ -477,7 +451,9 @@ const messages: unknown[][] = []
 await withOverrides(
   provide(
     useLog,
-    area => (...values) => messages.push([area, ...values]),
+    area =>
+      (...values) =>
+        messages.push([area, ...values]),
   ),
   () => useLog("billing")("invoice created", 42),
 )
@@ -598,9 +574,7 @@ The work keeps every override layer that is active when you call it:
 ```ts
 import { runDetached } from "ripple-di"
 
-const backgroundTask = runDetached(() =>
-  updateTenantSearchIndex(),
-)
+const backgroundTask = runDetached(() => updateTenantSearchIndex())
 
 trackBackgroundTask(backgroundTask)
 ```
@@ -618,9 +592,7 @@ To keep a value away from the detached work, remove or replace it inside:
 import { runDetached, withoutProvider, withOverrides } from "ripple-di"
 
 const backgroundTask = runDetached(() =>
-  withOverrides(withoutProvider(useCurrentUser), () =>
-    updateTenantSearchIndex(),
-  ),
+  withOverrides(withoutProvider(useCurrentUser), () => updateTenantSearchIndex()),
 )
 ```
 
@@ -631,9 +603,7 @@ The scope remains current while the callback runs and while Ripple DI awaits its
 The returned promise settles after cleanup, so code that needs the detached context, including finalization, belongs inside the callback:
 
 ```ts
-runDetached(() =>
-  runBackgroundTask().finally(finalizeBackgroundTask),
-)
+runDetached(() => runBackgroundTask().finally(finalizeBackgroundTask))
 ```
 
 A callback that returns a generator is rejected with `TypeError`, because the generator would run after the detached scope has closed.
@@ -743,9 +713,7 @@ That also suits a file of independent test cases that share one set of overrides
 `extend` returns a runner with one more layer of overrides and leaves the runner it extends unchanged:
 
 ```ts
-const tenantOverrides = jobOverrides.extend(() =>
-  provide(useTenantResolver, tenantResolver),
-)
+const tenantOverrides = jobOverrides.extend(() => provide(useTenantResolver, tenantResolver))
 
 await tenantOverrides.run(() => handleRequest())
 ```
@@ -802,10 +770,9 @@ function createApplication(databaseUrl: string) {
   const runtime = createRuntime()
 
   const useConfig = runtime.defineDependency(() => ({ databaseUrl }))
-  const useDb = runtime.defineDependency(
-    () => createDb(useConfig().databaseUrl),
-    { dispose: db => db.close() },
-  )
+  const useDb = runtime.defineDependency(() => createDb(useConfig().databaseUrl), {
+    dispose: db => db.close(),
+  })
 
   return { runtime, useDb }
 }
@@ -816,10 +783,7 @@ const preview = createApplication(previewDatabaseUrl)
 const productionUsers = await production.useDb().query("select * from users")
 const previewUsers = await preview.useDb().query("select * from users")
 
-await Promise.all([
-  production.runtime.dispose(),
-  preview.runtime.dispose(),
-])
+await Promise.all([production.runtime.dispose(), preview.runtime.dispose()])
 ```
 
 A dependency belongs to the runtime that defined it and cannot be read or overridden in another one.

@@ -1,5 +1,7 @@
 // Enables sharing before the application copy and the library copy load.
 import "ripple-di/shared"
+// A second opt-in from a copy of the same version is accepted.
+import "./lib/shared.mjs"
 
 import assert from "node:assert/strict"
 import { setTimeout as delay } from "node:timers/promises"
@@ -7,8 +9,6 @@ import { setTimeout as delay } from "node:timers/promises"
 import * as app from "ripple-di"
 
 import { copyUrl, ripple as library, useBase } from "./lib/index.mjs"
-// A second opt-in from a copy of the same version is accepted.
-import "./lib/shared.mjs"
 
 function checkOneImplementation() {
   assert.notEqual(copyUrl, import.meta.resolve("ripple-di"))
@@ -26,20 +26,13 @@ async function checkGraphAndOverrides() {
   const rootDouble = useDouble()
 
   assert.equal(total(), 3)
+  assert.equal(await library.withOverrides(app.provide(useBase, 5), () => total()), 11)
   assert.equal(
-    await library.withOverrides(app.provide(useBase, 5), () => total()),
-    11,
-  )
-  assert.equal(
-    await app.withOverrides(library.provide(useUnrelated, "replaced"), () =>
-      useDouble(),
-    ),
+    await app.withOverrides(library.provide(useUnrelated, "replaced"), () => useDouble()),
     rootDouble,
   )
   assert.equal(
-    await app.withOverrides(library.withoutProvider(useBase), () =>
-      library.resolve(useUnrelated),
-    ),
+    await app.withOverrides(library.withoutProvider(useBase), () => library.resolve(useUnrelated)),
     "unrelated",
   )
 }
@@ -63,7 +56,7 @@ async function checkOwnership() {
   const disposed = []
   const useResource = library.defineDependency({
     name: "resource",
-    dispose: (resource) => {
+    dispose: resource => {
       disposed.push(resource.id)
     },
   })
@@ -72,16 +65,9 @@ async function checkOwnership() {
     library.provideFactory(useResource, () => ({ id: "factory" })),
     () => [useResource(), useResource()],
   )
-  const handover = app.provide(
-    useResource,
-    { id: "handover" },
-    { dispose: true },
-  )
+  const handover = app.provide(useResource, { id: "handover" }, { dispose: true })
   await library.withOverrides(handover, () => useResource())
-  await app.withOverrides(
-    library.provide(useResource, { id: "borrowed" }),
-    () => useResource(),
-  )
+  await app.withOverrides(library.provide(useResource, { id: "borrowed" }), () => useResource())
   assert.deepEqual(disposed, ["factory", "handover"])
 
   await assert.rejects(
@@ -91,9 +77,7 @@ async function checkOwnership() {
 }
 
 async function checkValuesAndErrors() {
-  const useSession = app.defineDependency(() =>
-    library.asValue(Promise.resolve("session")),
-  )
+  const useSession = app.defineDependency(() => library.asValue(Promise.resolve("session")))
   assert.equal(await useSession(), "session")
 
   const useUnmarked = app.defineDependency(() => Promise.resolve("session"))
@@ -102,9 +86,7 @@ async function checkValuesAndErrors() {
   const useMissing = library.defineDependency({ name: "missing" })
   assert.throws(
     () => app.resolve(useMissing),
-    (error) =>
-      error instanceof library.MissingProviderError &&
-      error instanceof app.RippleError,
+    error => error instanceof library.MissingProviderError && error instanceof app.RippleError,
   )
 }
 
@@ -121,13 +103,11 @@ async function checkDetachedContext() {
   })
   assert.equal(await detached, "hello alice")
 
-  const stream = await app.withOverrides(
-    library.provide(useRequest, "bob"),
-    () =>
-      library.createDetachedStream(async function* () {
-        await delay(5)
-        yield useGreeting()
-      }),
+  const stream = await app.withOverrides(library.provide(useRequest, "bob"), () =>
+    library.createDetachedStream(async function* () {
+      await delay(5)
+      yield useGreeting()
+    }),
   )
   const values = []
   for await (const value of stream) {
@@ -150,10 +130,7 @@ async function checkExplicitRuntimes() {
   const right = library.createRuntime({ name: "right" })
   const useLeft = left.defineDependency(() => "left")
 
-  assert.throws(
-    () => right.resolve(useLeft),
-    library.CrossRuntimeDependencyError,
-  )
+  assert.throws(() => right.resolve(useLeft), library.CrossRuntimeDependencyError)
   assert.throws(() => left.resolve(useBase), app.CrossRuntimeDependencyError)
   await left.dispose()
   assert.equal(useBase(), 1)

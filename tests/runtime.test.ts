@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test"
 
 import type { Dependency, Provision, Scope } from "ripple-di"
 import {
-  CrossRuntimeDependencyError,
   createRuntime,
+  CrossRuntimeDependencyError,
   DuplicateProviderError,
   InstallationConflictError,
   MissingProviderError,
@@ -20,9 +20,7 @@ describe("runtime instances", () => {
 
     expect(() => Format(2)).toThrow(MissingProviderError)
 
-    const scope = runtime.createScope(
-      provide(Format, (value) => `value:${value}`),
-    )
+    const scope = runtime.createScope(provide(Format, value => `value:${value}`))
     expect(scope.run(() => Format(2))).toBe("value:2")
 
     await scope.close()
@@ -94,9 +92,9 @@ describe("runtime instances", () => {
         expect(useTenant()).toBe("installed")
       }),
     ])
-    await expect(
-      runtime.withOverrides(removal, () => useTenant()),
-    ).rejects.toBeInstanceOf(MissingProviderError)
+    await expect(runtime.withOverrides(removal, () => useTenant())).rejects.toBeInstanceOf(
+      MissingProviderError,
+    )
     expect(useTenant()).toBe("installed")
     await runtime.dispose()
   })
@@ -106,15 +104,11 @@ describe("runtime instances", () => {
     const foreign = createRuntime()
     const useValue = runtime.defineDependency(() => "fallback")
     const removal = withoutProvider(useValue)
-    expect(() => foreign.createScope(removal)).toThrow(
-      CrossRuntimeDependencyError,
-    )
-    expect(() =>
-      runtime.createScope([provide(useValue, "value"), removal]),
-    ).toThrow(DuplicateProviderError)
-    expect(() => runtime.install([removal, removal])).toThrow(
+    expect(() => foreign.createScope(removal)).toThrow(CrossRuntimeDependencyError)
+    expect(() => runtime.createScope([provide(useValue, "value"), removal])).toThrow(
       DuplicateProviderError,
     )
+    expect(() => runtime.install([removal, removal])).toThrow(DuplicateProviderError)
 
     const installation = runtime.install(removal)
     expect(() => useValue()).toThrow(MissingProviderError)
@@ -144,7 +138,7 @@ describe("installation", () => {
       },
       {
         name: "service",
-        dispose: (service) => {
+        dispose: service => {
           disposed.push(service.config)
         },
       },
@@ -152,11 +146,9 @@ describe("installation", () => {
     const installation = runtime.install([provide(useConfig, "installed")])
 
     expect(creationCount).toBe(0)
-    const installedService = await new Promise<ReturnType<typeof useService>>(
-      (resolve) => {
-        queueMicrotask(() => resolve(useService()))
-      },
-    )
+    const installedService = await new Promise<ReturnType<typeof useService>>(resolve => {
+      queueMicrotask(() => resolve(useService()))
+    })
     expect(installedService.config).toBe("installed")
     expect(creationCount).toBe(1)
 
@@ -204,9 +196,7 @@ describe("installation", () => {
       conflict = caught
     }
     expect(conflict).toBeInstanceOf(InstallationConflictError)
-    expect((conflict as InstallationConflictError).reason).toBe(
-      "active-installation",
-    )
+    expect((conflict as InstallationConflictError).reason).toBe("active-installation")
 
     const closing = installation.close()
     conflict = undefined
@@ -216,9 +206,7 @@ describe("installation", () => {
       conflict = caught
     }
     expect(conflict).toBeInstanceOf(InstallationConflictError)
-    expect((conflict as InstallationConflictError).reason).toBe(
-      "closing-installation",
-    )
+    expect((conflict as InstallationConflictError).reason).toBe("closing-installation")
     expect((conflict as Error).message).toContain("Await Installation.close()")
     await closing
     expect(runtime.resolve(useView)).toBe(defaultView)
@@ -226,7 +214,7 @@ describe("installation", () => {
     const scope = runtime.createScope()
     const disposed: object[] = []
     const useOwned = runtime.defineDependency(() => ({}), {
-      dispose: (value) => {
+      dispose: value => {
         disposed.push(value)
       },
     })
@@ -242,9 +230,7 @@ describe("installation", () => {
     expect(conflict).toBeInstanceOf(InstallationConflictError)
     expect((conflict as InstallationConflictError).reason).toBe("live-scopes")
     expect((conflict as InstallationConflictError).scopeNames).toHaveLength(1)
-    expect((conflict as InstallationConflictError).scopeNames[0]).toMatch(
-      /^app\/scope-\d+$/,
-    )
+    expect((conflict as InstallationConflictError).scopeNames[0]).toMatch(/^app\/scope-\d+$/)
 
     await scope.close()
     const replacement = runtime.install([ownedProvision])
@@ -259,7 +245,7 @@ describe("installation", () => {
   it("blocks installation while a detached root scope is alive", async () => {
     const runtime = createRuntime({ name: "app" })
     let releaseTail!: () => void
-    const tailGate = new Promise<void>((resolve) => {
+    const tailGate = new Promise<void>(resolve => {
       releaseTail = resolve
     })
     const detachedTail = runtime.runDetached(() => tailGate)
@@ -312,7 +298,7 @@ describe("installation", () => {
     })
     const installation = runtime.install([])
     let releaseBackgroundWork!: () => void
-    const backgroundGate = new Promise<void>((resolve) => {
+    const backgroundGate = new Promise<void>(resolve => {
       releaseBackgroundWork = resolve
     })
     let backgroundTask!: Promise<void>
@@ -344,7 +330,7 @@ describe("installation", () => {
       },
     })
     let releaseBackgroundWork!: () => void
-    const backgroundGate = new Promise<void>((resolve) => {
+    const backgroundGate = new Promise<void>(resolve => {
       releaseBackgroundWork = resolve
     })
     let backgroundTask!: Promise<void>
@@ -396,14 +382,11 @@ describe("installation", () => {
     const runtime = createRuntime()
     const cleanupError = new Error("cleanup failed")
     const useConfig = runtime.defineDependency<object>({ name: "config" })
-    const useOwnedValue = runtime.defineDependency(
-      () => ({ config: useConfig() }),
-      {
-        dispose: () => {
-          throw cleanupError
-        },
+    const useOwnedValue = runtime.defineDependency(() => ({ config: useConfig() }), {
+      dispose: () => {
+        throw cleanupError
       },
-    )
+    })
     const installation = runtime.install([provide(useConfig, {})])
     runtime.resolve(useOwnedValue)
 
@@ -411,7 +394,7 @@ describe("installation", () => {
     expect(installation.close()).toBe(close)
     const closeError = await close.then(
       () => undefined,
-      (error) => error as AggregateError,
+      error => error as AggregateError,
     )
     expect(closeError).toBeInstanceOf(AggregateError)
     expect(closeError?.errors).toEqual([cleanupError])
@@ -430,31 +413,24 @@ describe("cross-runtime boundaries", () => {
       name: "runtime-a-value",
     })
 
-    expect(() =>
-      runtimeB.createScope([provide(useRuntimeAValue, "wrong")]),
-    ).toThrow(CrossRuntimeDependencyError)
-    expect(() => runtimeB.resolve(useRuntimeAValue)).toThrow(
+    expect(() => runtimeB.createScope([provide(useRuntimeAValue, "wrong")])).toThrow(
       CrossRuntimeDependencyError,
     )
+    expect(() => runtimeB.resolve(useRuntimeAValue)).toThrow(CrossRuntimeDependencyError)
 
     const useConsumer = runtimeB.defineDependency(() => useRuntimeAValue(), {
       name: "consumer",
     })
-    expect(() => runtimeB.resolve(useConsumer)).toThrow(
-      CrossRuntimeDependencyError,
-    )
+    expect(() => runtimeB.resolve(useConsumer)).toThrow(CrossRuntimeDependencyError)
 
     const scopeB = runtimeB.createScope()
     const useRuntimeBValue = runtimeB.defineDependency(() => "runtime-b", {
       name: "runtime-b-value",
     })
-    const useExplicitConsumer = runtimeA.defineDependency(
-      () => scopeB.resolve(useRuntimeBValue),
-      { name: "explicit-consumer" },
-    )
-    expect(() => runtimeA.resolve(useExplicitConsumer)).toThrow(
-      CrossRuntimeDependencyError,
-    )
+    const useExplicitConsumer = runtimeA.defineDependency(() => scopeB.resolve(useRuntimeBValue), {
+      name: "explicit-consumer",
+    })
+    expect(() => runtimeA.resolve(useExplicitConsumer)).toThrow(CrossRuntimeDependencyError)
 
     await scopeB.close()
     await runtimeA.dispose()
@@ -475,12 +451,8 @@ describe("cross-runtime boundaries", () => {
       error = caught
     }
     expect(error).toBeInstanceOf(CrossRuntimeDependencyError)
-    expect((error as CrossRuntimeDependencyError).dependencyRuntimeName).toBe(
-      "app",
-    )
-    expect((error as CrossRuntimeDependencyError).requestedRuntimeName).toBe(
-      "app",
-    )
+    expect((error as CrossRuntimeDependencyError).dependencyRuntimeName).toBe("app")
+    expect((error as CrossRuntimeDependencyError).requestedRuntimeName).toBe("app")
     expect((error as Error).message).toBe(
       'Dependency "value" belongs to a different runtime instance also named "app".',
     )

@@ -19,9 +19,9 @@ import {
   claimOwnedProvisions,
   type Provision,
   type ProvisionInput,
-  type ProvisionRecord,
   provisionListOf,
   provisionOf,
+  type ProvisionRecord,
 } from "./provide"
 import { resolveTracked } from "./resolution"
 
@@ -72,10 +72,7 @@ export class ScopeImpl implements ScopeContext {
   readonly name: string
   readonly depth: number
   readonly bindings = new Map<DependencyNode<unknown>, BoundProvider<unknown>>()
-  readonly viewCache = new Map<
-    DependencyNode<unknown>,
-    ResolutionRef<unknown>
-  >()
+  readonly viewCache = new Map<DependencyNode<unknown>, ResolutionRef<unknown>>()
   readonly ownedCells = new Map<DependencyNode<unknown>, Cell<unknown>>()
   readonly finalizers: Finalizer[] = []
   readonly children = new Set<ScopeContext>()
@@ -108,10 +105,7 @@ export class ScopeImpl implements ScopeContext {
   createScope(provisions: ProvisionInput = []): ScopeImpl {
     this.runtime.assertScopeManagementAllowed("Scope.createScope")
     this.assertActive("<createScope>")
-    const records = validateProvisions(
-      this.runtime,
-      provisionListOf(provisions),
-    )
+    const records = validateProvisions(this.runtime, provisionListOf(provisions))
     return new ScopeImpl(this.runtime, this, records)
   }
 
@@ -167,14 +161,8 @@ export class ScopeImpl implements ScopeContext {
         }
       : undefined
 
-    this.ownedCells.set(
-      cell.node as DependencyNode<unknown>,
-      cell as Cell<unknown>,
-    )
-    this.viewCache.set(
-      cell.node as DependencyNode<unknown>,
-      cell as ResolutionRef<unknown>,
-    )
+    this.ownedCells.set(cell.node as DependencyNode<unknown>, cell as Cell<unknown>)
+    this.viewCache.set(cell.node as DependencyNode<unknown>, cell as ResolutionRef<unknown>)
     requestedScope.viewCache.set(
       cell.node as DependencyNode<unknown>,
       cell as ResolutionRef<unknown>,
@@ -226,6 +214,7 @@ export class ScopeImpl implements ScopeContext {
 
     try {
       if (force) {
+        // oxlint-disable-next-line unicorn/no-useless-spread -- closing a child removes it from this set, so iterate over a snapshot.
         for (const child of [...this.children]) {
           try {
             await child.close()
@@ -268,10 +257,7 @@ export class ScopeImpl implements ScopeContext {
 
     if (errors.length > 0) {
       this.lifecycle.reject(
-        new AggregateError(
-          errors,
-          `Errors while closing scope "${this.name}".`,
-        ),
+        new AggregateError(errors, `Errors while closing scope "${this.name}".`),
       )
     } else {
       this.lifecycle.resolve()
@@ -302,11 +288,7 @@ function validateProvisions(
   for (const record of records) {
     const node = nodeOf(record.dependency)
     if (node.runtime !== runtime) {
-      throw new CrossRuntimeDependencyError(
-        node.name,
-        node.runtime.name,
-        runtime.name,
-      )
+      throw new CrossRuntimeDependencyError(node.name, node.runtime.name, runtime.name)
     }
     if (seen.has(node)) {
       throw new DuplicateProviderError(node.name)
@@ -318,7 +300,7 @@ function validateProvisions(
   // claim boundary so a failed lookup neither creates a scope nor consumes an
   // owned provision.
   return claimOwnedProvisions(provisions, () =>
-    records.map((record) => {
+    records.map(record => {
       if (record.spec.kind !== "owned-value" || record.spec.dispose !== true) {
         return record
       }
@@ -377,9 +359,7 @@ export async function closeTemporaryScopes(
   errors: unknown[],
 ): Promise<void> {
   if (innermost.children.size > 0) {
-    errors.push(
-      new LeakedChildScopeError(innermost.name, innermost.children.size),
-    )
+    errors.push(new LeakedChildScopeError(innermost.name, innermost.children.size))
   }
   try {
     await outermost.close()
@@ -389,10 +369,7 @@ export async function closeTemporaryScopes(
 }
 
 /** Throws one collected error as is and several as one `AggregateError`. */
-export function throwCollected(
-  errors: readonly unknown[],
-  message: string,
-): void {
+export function throwCollected(errors: readonly unknown[], message: string): void {
   if (errors.length === 1) {
     throw errors[0]
   }

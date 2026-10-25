@@ -3,16 +3,16 @@ import vm from "node:vm"
 
 import type { Dependency } from "ripple-di"
 import {
-  AsyncFactoryError,
   asValue,
-  CrossScopeResolutionError,
+  AsyncFactoryError,
   createRuntime,
-  DependencyCycleError,
+  CrossScopeResolutionError,
   defineDependency,
+  DependencyCycleError,
   FactoryError,
   FactoryScopeOperationError,
-  MissingProviderError,
   memoize,
+  MissingProviderError,
   provide,
   provideFactory,
   withoutProvider,
@@ -22,8 +22,7 @@ import { createQueryBuilder, type QueryBuilder } from "./awaitable"
 
 // Distinctive successful value for the branch that avoids the test cycle.
 const NON_CYCLIC_VALUE = 42
-const ANONYMOUS_DIAGNOSTIC_NAME =
-  /^dependency#\d+ \(tests\/resolution\.test\.ts:\d+\)$/
+const ANONYMOUS_DIAGNOSTIC_NAME = /^dependency#\d+ \(tests\/resolution\.test\.ts:\d+\)$/
 
 describe("resolution and tracking", () => {
   it("reports a missing provider", async () => {
@@ -43,11 +42,7 @@ describe("resolution and tracking", () => {
       error = caught
     }
     expect(error).toBeInstanceOf(MissingProviderError)
-    expect((error as MissingProviderError).path).toEqual([
-      "outer",
-      "middle",
-      "missing",
-    ])
+    expect((error as MissingProviderError).path).toEqual(["outer", "middle", "missing"])
     expect((error as Error).message).toBe(
       'Dependency "missing" has no provider while resolving ' +
         "outer \u2192 middle \u2192 missing.",
@@ -66,9 +61,7 @@ describe("resolution and tracking", () => {
       error = caught
     }
     expect(error).toBeInstanceOf(MissingProviderError)
-    expect((error as MissingProviderError).dependencyName).toMatch(
-      ANONYMOUS_DIAGNOSTIC_NAME,
-    )
+    expect((error as MissingProviderError).dependencyName).toMatch(ANONYMOUS_DIAGNOSTIC_NAME)
     expect((error as MissingProviderError).path).toEqual([
       (error as MissingProviderError).dependencyName,
     ])
@@ -315,10 +308,9 @@ describe("resolution and tracking", () => {
     const runtime = createRuntime()
     const useA = runtime.defineDependency(() => "A", { name: "A" })
     const useB = runtime.defineDependency(() => "B", { name: "B" })
-    const Foo = runtime.defineFactoryDependency(
-      (flag: boolean) => (flag ? useA() : useB()),
-      { name: "Foo" },
-    )
+    const Foo = runtime.defineFactoryDependency((flag: boolean) => (flag ? useA() : useB()), {
+      name: "Foo",
+    })
     const useLeft = runtime.defineDependency(() => ({ value: Foo(true) }), {
       name: "left",
     })
@@ -330,7 +322,7 @@ describe("resolution and tracking", () => {
     const overrideA = runtime.createScope(provide(useA, "override-A"))
     const overrideB = runtime.createScope(provide(useB, "override-B"))
     const overrideFoo = runtime.createScope(
-      provide(Foo, (flag) => (flag ? "override-left" : "override-right")),
+      provide(Foo, flag => (flag ? "override-left" : "override-right")),
     )
 
     expect(overrideA.resolve(useLeft)).toEqual({ value: "override-A" })
@@ -379,12 +371,11 @@ describe("resolution and tracking", () => {
     const useAsync = runtime.defineDependency(() => Promise.resolve("value"), {
       name: "async",
     })
-    const useAsyncFunction = runtime.defineDependency(
-      async () => await Promise.resolve("value"),
-      { name: "async-function" },
-    )
+    const useAsyncFunction = runtime.defineDependency(async () => await Promise.resolve("value"), {
+      name: "async-function",
+    })
     const useChained = runtime.defineDependency(
-      () => Promise.resolve("value").then((text) => text.toUpperCase()),
+      () => Promise.resolve("value").then(text => text.toUpperCase()),
       { name: "chained" },
     )
     const useForeignRealm = runtime.defineDependency(
@@ -396,9 +387,7 @@ describe("resolution and tracking", () => {
     expect(() => runtime.resolve(useAsyncFunction)).toThrow(AsyncFactoryError)
     expect(() => runtime.resolve(useChained)).toThrow(AsyncFactoryError)
     // A promise from another realm fails `instanceof Promise`.
-    expect(vm.runInNewContext("Promise.resolve(1)") instanceof Promise).toBe(
-      false,
-    )
+    expect(vm.runInNewContext("Promise.resolve(1)") instanceof Promise).toBe(false)
     expect(() => runtime.resolve(useForeignRealm)).toThrow(AsyncFactoryError)
     await runtime.dispose()
   })
@@ -410,15 +399,12 @@ describe("resolution and tracking", () => {
     })
     const useRegion = runtime.defineDependency(() => "eu", { name: "region" })
     let disposed: QueryBuilder | undefined
-    const useQueryBuilder = runtime.defineDependency(
-      () => createQueryBuilder(useConfig()),
-      {
-        name: "query-builder",
-        dispose: (builder) => {
-          disposed = builder
-        },
+    const useQueryBuilder = runtime.defineDependency(() => createQueryBuilder(useConfig()), {
+      name: "query-builder",
+      dispose: builder => {
+        disposed = builder
       },
-    )
+    })
 
     const builder = runtime.resolve(useQueryBuilder)
     expect(builder.url).toBe("production")
@@ -461,7 +447,7 @@ describe("resolution and tracking", () => {
   it("resolves a value that only claims to be a promise", async () => {
     const runtime = createRuntime()
     const disguised = {
-      // biome-ignore lint/suspicious/noThenProperty: the disguise is the subject under test.
+      // oxlint-disable-next-line unicorn/no-thenable -- the disguise is the subject under test.
       then: (resolve: (value: string) => void) => resolve("resolved"),
       [Symbol.toStringTag]: "Promise",
     }
@@ -488,7 +474,7 @@ describe("resolution and tracking", () => {
       },
       {
         name: "token",
-        dispose: (token) => {
+        dispose: token => {
           disposedTokens.push(token)
         },
       },
@@ -568,9 +554,7 @@ describe("resolution and tracking", () => {
     const child = runtime.createScope([provide(useConfig, "child")])
 
     expect(child.resolve(useView).config).toBe("child")
-    expect(await outer.run(async () => child.resolve(useView).config)).toBe(
-      "child",
-    )
+    expect(await outer.run(async () => child.resolve(useView).config)).toBe("child")
 
     await outer.close()
     await child.close()
@@ -582,10 +566,9 @@ describe("resolution and tracking", () => {
     const useConfig = runtime.defineDependency(() => "root", {
       name: "config",
     })
-    const useView = runtime.defineDependency(
-      () => ({ config: runtime.resolve(useConfig) }),
-      { name: "view" },
-    )
+    const useView = runtime.defineDependency(() => ({ config: runtime.resolve(useConfig) }), {
+      name: "view",
+    })
     const child = runtime.createScope([provide(useConfig, "child")])
 
     expect(child.resolve(useView).config).toBe("child")
@@ -599,16 +582,11 @@ describe("resolution and tracking", () => {
       name: "value",
     })
     const other = runtime.createScope()
-    const useConsumer = runtime.defineDependency(
-      () => other.resolve(useValue),
-      {
-        name: "consumer",
-      },
-    )
+    const useConsumer = runtime.defineDependency(() => other.resolve(useValue), {
+      name: "consumer",
+    })
 
-    expect(() => runtime.resolve(useConsumer)).toThrow(
-      CrossScopeResolutionError,
-    )
+    expect(() => runtime.resolve(useConsumer)).toThrow(CrossScopeResolutionError)
     await other.close()
     await runtime.dispose()
   })
@@ -624,34 +602,24 @@ describe("resolution and tracking", () => {
       name: "overridden",
     })
     const overrideValue = runtime.createValueOverride(useOverridden)
-    const operations: readonly [
-      name: string,
-      invoke: () => unknown,
-      expectedOperation?: string,
-    ][] = [
-      ["Runtime.install", () => runtime.install([])],
-      ["Runtime.createScope", () => runtime.createScope()],
-      ["Runtime.withOverrides", () => runtime.withOverrides([], () => {})],
-      ["Runtime.runDetached", () => runtime.runDetached(() => {})],
+    const operations: readonly [name: string, invoke: () => unknown, expectedOperation?: string][] =
       [
-        "Runtime.createDetachedStream",
-        () => runtime.createDetachedStream(async function* () {}),
-      ],
-      ["OverrideRunner.run", () => runner.run(() => {})],
-      ["ValueOverride", () => overrideValue({}, () => {})],
-      ["Runtime.dispose", () => runtime.dispose()],
-      ["Installation.close", () => installation.close()],
-      [
-        "Installation.close (closed)",
-        () => closedInstallation.close(),
-        "Installation.close",
-      ],
-      ["Scope.createScope", () => scope.createScope()],
-      ["Scope.run", () => scope.run(() => {})],
-      ["Scope.withOverrides", () => scope.withOverrides([], () => {})],
-      ["Scope.retire", () => scope.retire()],
-      ["Scope.close", () => scope.close()],
-    ]
+        ["Runtime.install", () => runtime.install([])],
+        ["Runtime.createScope", () => runtime.createScope()],
+        ["Runtime.withOverrides", () => runtime.withOverrides([], () => {})],
+        ["Runtime.runDetached", () => runtime.runDetached(() => {})],
+        ["Runtime.createDetachedStream", () => runtime.createDetachedStream(async function* () {})],
+        ["OverrideRunner.run", () => runner.run(() => {})],
+        ["ValueOverride", () => overrideValue({}, () => {})],
+        ["Runtime.dispose", () => runtime.dispose()],
+        ["Installation.close", () => installation.close()],
+        ["Installation.close (closed)", () => closedInstallation.close(), "Installation.close"],
+        ["Scope.createScope", () => scope.createScope()],
+        ["Scope.run", () => scope.run(() => {})],
+        ["Scope.withOverrides", () => scope.withOverrides([], () => {})],
+        ["Scope.retire", () => scope.retire()],
+        ["Scope.close", () => scope.close()],
+      ]
 
     for (const [name, invoke, expectedOperation = name] of operations) {
       const useConsumer = runtime.defineDependency(
@@ -668,12 +636,8 @@ describe("resolution and tracking", () => {
         error = caught
       }
       expect(error).toBeInstanceOf(FactoryScopeOperationError)
-      expect((error as FactoryScopeOperationError).operation).toBe(
-        expectedOperation,
-      )
-      expect((error as FactoryScopeOperationError).dependencyName).toBe(
-        `consumer:${name}`,
-      )
+      expect((error as FactoryScopeOperationError).operation).toBe(expectedOperation)
+      expect((error as FactoryScopeOperationError).dependencyName).toBe(`consumer:${name}`)
     }
 
     await scope.close()
@@ -796,7 +760,7 @@ describe("resolution and tracking", () => {
       },
       {
         name: "tenant",
-        dispose: (tenant) => {
+        dispose: tenant => {
           disposed.push(tenant)
         },
       },
@@ -808,17 +772,16 @@ describe("resolution and tracking", () => {
       },
       { name: "service" },
     )
-    const useHandler = runtime.defineDependency(
-      () => ({ service: useService() }),
-      { name: "handler" },
-    )
+    const useHandler = runtime.defineDependency(() => ({ service: useService() }), {
+      name: "handler",
+    })
     const useDb = runtime.defineDependency(() => ({}))
     const handler = useHandler()
     const db = useDb()
     const tenantMemo = memoize(() => useTenant())
     expect(tenantMemo()).toBe("tenant")
 
-    await runtime.withOverrides(withoutProvider(useTenant), (scope) => {
+    await runtime.withOverrides(withoutProvider(useTenant), scope => {
       expect(() => scope.resolve(useTenant)).toThrow(MissingProviderError)
       expect(() => tenantMemo()).toThrow(MissingProviderError)
       expect(() => useHandler()).toThrow(
@@ -893,15 +856,12 @@ describe("promotion", () => {
       name: "unrelated",
     })
     let disposed = 0
-    const useFactoryValue = runtime.defineDependency(
-      () => ({ config: useConfig() }),
-      {
-        name: "factory-value",
-        dispose: () => {
-          disposed += 1
-        },
+    const useFactoryValue = runtime.defineDependency(() => ({ config: useConfig() }), {
+      name: "factory-value",
+      dispose: () => {
+        disposed += 1
       },
-    )
+    })
     const child = runtime.createScope([provide(useUnrelated, "child")])
     const value = child.resolve(useFactoryValue)
 
@@ -920,12 +880,9 @@ describe("promotion", () => {
     const useUnrelated = runtime.defineDependency(() => "root", {
       name: "unrelated",
     })
-    const useFactoryValue = runtime.defineDependency(
-      () => ({ config: useConfig() }),
-      {
-        name: "factory-value",
-      },
-    )
+    const useFactoryValue = runtime.defineDependency(() => ({ config: useConfig() }), {
+      name: "factory-value",
+    })
     const level1 = runtime.createScope([provide(useConfig, "level1")])
     const level2 = level1.createScope([provide(useUnrelated, "level2")])
     const value = level2.resolve(useFactoryValue)
@@ -950,20 +907,15 @@ describe("promotion", () => {
     const useConfig = runtime.defineDependency(() => "root", {
       name: "config",
     })
-    const useFactoryValue = runtime.defineDependency(
-      () => ({ config: useConfig() }),
-      {
-        name: "factory-value",
-      },
-    )
+    const useFactoryValue = runtime.defineDependency(() => ({ config: useConfig() }), {
+      name: "factory-value",
+    })
     const compatibleLeft = runtime.createScope()
     const compatibleRight = runtime.createScope()
     const conflictingLeft = runtime.createScope([provide(useConfig, "left")])
     const conflictingRight = runtime.createScope([provide(useConfig, "right")])
 
-    expect(compatibleLeft.resolve(useFactoryValue)).toBe(
-      compatibleRight.resolve(useFactoryValue),
-    )
+    expect(compatibleLeft.resolve(useFactoryValue)).toBe(compatibleRight.resolve(useFactoryValue))
     expect(conflictingLeft.resolve(useFactoryValue)).not.toBe(
       conflictingRight.resolve(useFactoryValue),
     )
@@ -980,15 +932,12 @@ describe("promotion", () => {
     const rootRequest = {}
     const useRequest = runtime.defineDependency(() => rootRequest)
     let disposed = 0
-    const useLocal = runtime.defineDependency(
-      () => ({ request: useRequest() }),
-      {
-        name: "local",
-        dispose: () => {
-          disposed += 1
-        },
+    const useLocal = runtime.defineDependency(() => ({ request: useRequest() }), {
+      name: "local",
+      dispose: () => {
+        disposed += 1
       },
-    )
+    })
     const rootValue = runtime.resolve(useLocal)
     const childRequest = {}
     const child = runtime.createScope([provide(useRequest, childRequest)])
@@ -1008,15 +957,12 @@ describe("promotion", () => {
     const runtime = createRuntime()
     const useConfig = runtime.defineDependency<string>({ name: "config" })
     let disposed = 0
-    const useFactoryValue = runtime.defineDependency(
-      () => ({ config: useConfig() }),
-      {
-        name: "factory-value",
-        dispose: () => {
-          disposed += 1
-        },
+    const useFactoryValue = runtime.defineDependency(() => ({ config: useConfig() }), {
+      name: "factory-value",
+      dispose: () => {
+        disposed += 1
       },
-    )
+    })
     const parent = runtime.createScope([provide(useConfig, "parent")])
     const child = parent.createScope()
     const retirement = parent.retire()
@@ -1032,11 +978,7 @@ describe("promotion", () => {
 
 function deepestCauseMessage(error: unknown): string {
   let current = error
-  while (
-    current instanceof Error &&
-    "cause" in current &&
-    current.cause !== undefined
-  ) {
+  while (current instanceof Error && "cause" in current && current.cause !== undefined) {
     current = current.cause
   }
   return current instanceof Error ? current.message : String(current)

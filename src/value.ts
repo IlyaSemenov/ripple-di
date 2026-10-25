@@ -36,7 +36,5 @@ export function asValue<T>(value: T): AsValue<T> {
 
 /** Returns the boxed payload, or `undefined` for an ordinary factory result. */
 export function markedValueOf(result: unknown): MarkedValue | undefined {
-  return typeof result === "object" && result !== null
-    ? markedValues.get(result)
-    : undefined
+  return typeof result === "object" && result !== null ? markedValues.get(result) : undefined
 }

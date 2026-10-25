@@ -15,8 +15,6 @@ assert.throws(() => app.provide(useBase, 2), {
 })
 assert.throws(
   () => app.resolve(app.defineDependency()),
-  (error) =>
-    error instanceof app.MissingProviderError &&
-    !(error instanceof library.RippleError),
+  error => error instanceof app.MissingProviderError && !(error instanceof library.RippleError),
 )
 assert.equal(useBase(), 1)

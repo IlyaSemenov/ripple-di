@@ -43,10 +43,7 @@ export interface ProvisionRecord<T> {
 const provisionRecords = new WeakMap<object, ProvisionRecord<unknown>>()
 const claimedOwnedProvisions = new WeakSet<object>()
 
-function createProvision<T>(
-  dependency: DependencyToken<T>,
-  spec: ProviderSpec<T>,
-): Provision {
+function createProvision<T>(dependency: DependencyToken<T>, spec: ProviderSpec<T>): Provision {
   // Validate package-copy identity before returning a provision.
   nodeOf(dependency)
   const provision = {} as Provision
@@ -80,7 +77,7 @@ export function provisionListOf(input: ProvisionInput): readonly Provision[] {
 export function collectProvisions(
   ...inputs: readonly ProvisionCollectionInput[]
 ): readonly Provision[] {
-  return inputs.flatMap((input) => {
+  return inputs.flatMap(input => {
     if (input === false || input === null || input === undefined) {
       return []
     }
@@ -98,9 +95,7 @@ export function claimOwnedProvisions<TPrepared>(
   provisions: readonly Provision[],
   prepare: () => TPrepared,
 ): TPrepared {
-  const owned = provisions.filter(
-    (provision) => provisionOf(provision).spec.kind === "owned-value",
-  )
+  const owned = provisions.filter(provision => provisionOf(provision).spec.kind === "owned-value")
 
   for (const provision of owned) {
     if (claimedOwnedProvisions.has(provision)) {
@@ -144,9 +139,7 @@ export function provide<T>(
     const node = nodeOf(dependency)
     const dispose = options.dispose === true ? node.dispose : options.dispose
     if (!dispose) {
-      throw new TypeError(
-        `Dependency "${node.name}" has no cleanup configuration to reuse.`,
-      )
+      throw new TypeError(`Dependency "${node.name}" has no cleanup configuration to reuse.`)
     }
     return createProvision(dependency, {
       kind: "owned-value",

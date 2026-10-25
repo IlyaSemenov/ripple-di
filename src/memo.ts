@@ -3,16 +3,13 @@ import { isPromise } from "node:util/types"
 import { AsyncMemoError, MemoCycleError } from "./errors"
 import {
   currentTracking,
-  type MemoTrackingFrame,
   memoCyclePath,
+  type MemoTrackingFrame,
   popTracking,
   pushTracking,
 } from "./evaluation"
 import type { DependencyIdentityRecord } from "./graph"
-import {
-  propagateTrackedDependencies,
-  reuseTrackedDependencies,
-} from "./resolution"
+import { propagateTrackedDependencies, reuseTrackedDependencies } from "./resolution"
 
 interface MemoCell<T> {
   readonly value: T
@@ -26,9 +23,7 @@ type ZeroArgumentMethod<TMethod extends (...args: never[]) => unknown> =
  * Memoizes a zero-argument synchronous computation by its receiver and the
  * Ripple dependencies it reads.
  */
-export function memoize<TResult>(
-  computation: (this: void) => TResult,
-): () => TResult
+export function memoize<TResult>(computation: (this: void) => TResult): () => TResult
 export function memoize<TObject extends object, TResult>(
   computation: (this: TObject) => TResult,
 ): (this: TObject) => TResult
@@ -54,13 +49,9 @@ function createMemoized<TReceiver extends object | undefined, TResult>(
     }
     if (
       this === null ||
-      (this !== undefined &&
-        typeof this !== "object" &&
-        typeof this !== "function")
+      (this !== undefined && typeof this !== "object" && typeof this !== "function")
     ) {
-      throw new TypeError(
-        "A dependency-aware memo requires an object receiver.",
-      )
+      throw new TypeError("A dependency-aware memo requires an object receiver.")
     }
 
     const receiver = this ?? undefined

@@ -9,23 +9,9 @@ export type {
 export type { DetachedStream, DetachedStreamOptions } from "./detached"
 export * from "./errors"
 export { memo, memoize } from "./memo"
-export type {
-  OverrideRunner,
-  ProvisionFactory,
-  ValueOverride,
-} from "./overrides"
-export type {
-  ProvideOptions,
-  Provision,
-  ProvisionCollectionInput,
-  ProvisionInput,
-} from "./provide"
-export {
-  collectProvisions,
-  provide,
-  provideFactory,
-  withoutProvider,
-} from "./provide"
+export type { OverrideRunner, ProvisionFactory, ValueOverride } from "./overrides"
+export type { ProvideOptions, Provision, ProvisionCollectionInput, ProvisionInput } from "./provide"
+export { collectProvisions, provide, provideFactory, withoutProvider } from "./provide"
 export type { Installation, Runtime, RuntimeOptions } from "./runtime"
 export {
   createDetachedStream,

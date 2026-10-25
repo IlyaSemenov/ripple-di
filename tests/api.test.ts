@@ -8,30 +8,30 @@ import {
   createRuntime,
   createScope,
   createValueOverride,
+  defineDependency,
+  defineFactoryDependency,
   type Dependency,
   type DetachedStream,
   type DetachedStreamOptions,
-  defineDependency,
-  defineFactoryDependency,
   dispose,
   type FactoryDependency,
-  type Installation,
   install,
-  MissingProviderError,
+  type Installation,
   memo,
   memoize,
+  MissingProviderError,
   type OverrideRunner,
   OwnedProvisionReuseError,
-  type Provision,
-  type ProvisionCollectionInput,
   provide,
   provideFactory,
+  type Provision,
+  type ProvisionCollectionInput,
   resolve,
   runDetached,
   type Scope,
   type ValueOverride,
-  withOverrides,
   withoutProvider,
+  withOverrides,
 } from "ripple-di"
 
 import { createQueryBuilder, type QueryBuilder } from "./awaitable"
@@ -70,7 +70,7 @@ describe("consumer site", () => {
       url: "fake",
       query: async () => "fake rows",
     }
-    await withOverrides([provide(useDb, fake)], (scope) => {
+    await withOverrides([provide(useDb, fake)], scope => {
       const viaCall: Db = useDb()
       const viaResolve: Db = scope.resolve(useDb)
       expect(viaCall).toBe(fake)
@@ -137,29 +137,23 @@ describe("dependency-aware memo types", () => {
 
 describe("factory dependency", () => {
   it("contextually types a built-in factory from its explicit signature", () => {
-    const trim = defineFactoryDependency<(value: string) => string>((value) => {
+    const trim = defineFactoryDependency<(value: string) => string>(value => {
       expectTypeOf(value).toEqualTypeOf<string>()
       return value.trim()
     })
 
-    expectTypeOf(trim).toEqualTypeOf<
-      FactoryDependency<(value: string) => string>
-    >()
+    expectTypeOf(trim).toEqualTypeOf<FactoryDependency<(value: string) => string>>()
     expect(trim(" value ")).toBe("value")
   })
 
   it("contextually types a runtime factory from its explicit signature", async () => {
     const runtime = createRuntime()
-    const trim = runtime.defineFactoryDependency<(value: string) => string>(
-      (value) => {
-        expectTypeOf(value).toEqualTypeOf<string>()
-        return value.trim()
-      },
-    )
+    const trim = runtime.defineFactoryDependency<(value: string) => string>(value => {
+      expectTypeOf(value).toEqualTypeOf<string>()
+      return value.trim()
+    })
 
-    expectTypeOf(trim).toEqualTypeOf<
-      FactoryDependency<(value: string) => string>
-    >()
+    expectTypeOf(trim).toEqualTypeOf<FactoryDependency<(value: string) => string>>()
     expect(trim(" value ")).toBe("value")
     await runtime.dispose()
   })
@@ -172,7 +166,7 @@ describe("factory dependency", () => {
     expect(() => LoadContext("assets")).toThrow(MissingProviderError)
 
     await withOverrides(
-      provide(LoadContext, async (bucket) => ({ bucket })),
+      provide(LoadContext, async bucket => ({ bucket })),
       async () => {
         await expect(LoadContext("assets")).resolves.toEqual({
           bucket: "assets",
@@ -216,9 +210,7 @@ describe("factory dependency", () => {
     ): Promise<{ sql: string; params: readonly unknown[] | undefined }> =>
       Promise.resolve({ sql, params })
     const Query = defineFactoryDependency(queryFactory)
-    const Count = defineFactoryDependency(
-      (...values: string[]) => values.length,
-    )
+    const Count = defineFactoryDependency((...values: string[]) => values.length)
     const Notify = defineFactoryDependency((_message: string): void => {})
     const Identity = defineFactoryDependency(<T>(value: T): T => value)
     function Convert(value: string): number
@@ -253,14 +245,14 @@ describe("factory dependency", () => {
 
     const [left, right] = await Promise.all([
       withOverrides(
-        provide(Create, (label) => ({ label: `A:${label}` })),
+        provide(Create, label => ({ label: `A:${label}` })),
         async () => {
           await Promise.resolve()
           return Create("x")
         },
       ),
       withOverrides(
-        provide(Create, (label) => ({ label: `B:${label}` })),
+        provide(Create, label => ({ label: `B:${label}` })),
         async () => {
           await Promise.resolve()
           return Create("x")
@@ -289,17 +281,12 @@ describe("module-level API", () => {
     const useInstalledConfig = defineDependency<{ url: string }>({
       name: "installed-config",
     })
-    const installation: Installation = install([
-      provide(useInstalledConfig, { url: "installed" }),
-    ])
+    const installation: Installation = install([provide(useInstalledConfig, { url: "installed" })])
 
     expect(useInstalledConfig().url).toBe("installed")
-    await withOverrides(
-      [provide(useInstalledConfig, { url: "scoped" })],
-      () => {
-        expect(useInstalledConfig().url).toBe("scoped")
-      },
-    )
+    await withOverrides([provide(useInstalledConfig, { url: "scoped" })], () => {
+      expect(useInstalledConfig().url).toBe("scoped")
+    })
     expect(useInstalledConfig().url).toBe("installed")
 
     await installation.close()
@@ -309,15 +296,12 @@ describe("module-level API", () => {
   it("exposes detached streams through the module-level API", async () => {
     const controller = new AbortController()
     const options: DetachedStreamOptions = { signal: controller.signal }
-    const stream: DetachedStream<number> = createDetachedStream(
-      async function* (scope, signal) {
-        expectTypeOf(scope).toEqualTypeOf<Scope>()
-        expectTypeOf(signal).toEqualTypeOf<AbortSignal>()
-        expect(signal).not.toBe(controller.signal)
-        yield 42
-      },
-      options,
-    )
+    const stream: DetachedStream<number> = createDetachedStream(async function* (scope, signal) {
+      expectTypeOf(scope).toEqualTypeOf<Scope>()
+      expectTypeOf(signal).toEqualTypeOf<AbortSignal>()
+      expect(signal).not.toBe(controller.signal)
+      yield 42
+    }, options)
     const values: number[] = []
 
     for await (const value of stream) {
@@ -329,7 +313,7 @@ describe("module-level API", () => {
   })
 
   it("exposes detached context through the module-level API", async () => {
-    const result: Promise<number> = runDetached(async (scope) => {
+    const result: Promise<number> = runDetached(async scope => {
       expectTypeOf(scope).toEqualTypeOf<Scope>()
       await Promise.resolve()
       return 42
@@ -343,13 +327,7 @@ describe("provision input", () => {
   it("collects individual, listed, and conditional provisions", () => {
     const useValue = defineDependency<string>({ name: "collected-value" })
     const value = provide(useValue, "value")
-    const inputs: ProvisionCollectionInput[] = [
-      value,
-      [value],
-      false,
-      null,
-      undefined,
-    ]
+    const inputs: ProvisionCollectionInput[] = [value, [value], false, null, undefined]
     const collected = collectProvisions(...inputs)
 
     expectTypeOf(collected).toEqualTypeOf<readonly Provision[]>()
@@ -379,7 +357,7 @@ describe("provision input", () => {
     const installation = install(provide(useValue, "installed"))
 
     expect(useValue()).toBe("installed")
-    await withOverrides(provide(useValue, "overridden"), async (scope) => {
+    await withOverrides(provide(useValue, "overridden"), async scope => {
       expect(useValue()).toBe("overridden")
       await scope.withOverrides(provide(useValue, "nested"), () => {
         expect(useValue()).toBe("nested")
@@ -396,9 +374,7 @@ describe("provision input", () => {
     const runner = createOverrideRunner(() => provide(useValue, "runner"))
     const layered = runner.extend(() => provide(useLayer, "layer"))
     expect(await runner.run(() => useValue())).toBe("runner")
-    expect(await layered.run(() => `${useValue()}/${useLayer()}`)).toBe(
-      "runner/layer",
-    )
+    expect(await layered.run(() => `${useValue()}/${useLayer()}`)).toBe("runner/layer")
 
     await installation.close()
   })
@@ -408,9 +384,8 @@ describe("provision input", () => {
     const useValue = runtime.defineDependency<string>({ name: "single-value" })
     runtime.install(provide(useValue, "installed"))
 
-    const scoped = await runtime.withOverrides(
-      provide(useValue, "overridden"),
-      (scope) => scope.resolve(useValue),
+    const scoped = await runtime.withOverrides(provide(useValue, "overridden"), scope =>
+      scope.resolve(useValue),
     )
     const scope = runtime.createScope(provide(useValue, "manual"))
 
@@ -425,7 +400,7 @@ describe("provision input", () => {
     const closed: string[] = []
     const useConnection = defineDependency<{ id: string }>({
       name: "connection",
-      dispose: (connection) => void closed.push(connection.id),
+      dispose: connection => void closed.push(connection.id),
     })
     const handover = provide(useConnection, { id: "solo" }, { dispose: true })
 
@@ -434,26 +409,20 @@ describe("provision input", () => {
     })
 
     expect(closed).toEqual(["solo"])
-    await expect(withOverrides(handover, () => {})).rejects.toThrow(
-      OwnedProvisionReuseError,
-    )
+    await expect(withOverrides(handover, () => {})).rejects.toThrow(OwnedProvisionReuseError)
   })
 })
 
 describe("override runner", () => {
   const useCaller = defineDependency<string>({ name: "caller" })
-  const callers: OverrideRunner = createOverrideRunner(() => [
-    provide(useCaller, "caller"),
-  ])
+  const callers: OverrideRunner = createOverrideRunner(() => [provide(useCaller, "caller")])
 
   it("reuses one set of overrides for separate calls", async () => {
     const useTenant = defineDependency<string>({ name: "tenant" })
     const tenants = callers.extend(() => [provide(useTenant, "acme")])
 
     expect(await callers.run(() => useCaller())).toBe("caller")
-    expect(await tenants.run(async () => `${useCaller()}/${useTenant()}`)).toBe(
-      "caller/acme",
-    )
+    expect(await tenants.run(async () => `${useCaller()}/${useTenant()}`)).toBe("caller/acme")
 
     const call = callers.run(() => useDb())
     expectTypeOf(call).toEqualTypeOf<Promise<Db>>()
@@ -473,26 +442,17 @@ describe("override runner", () => {
       `${useCaller()}:${label}`.repeat(times),
     )
     const countNow = callers.wrap((...parts: string[]) => parts.length)
-    const describeMethod = callers.wrap(function (
-      this: { prefix: string },
-      count: number,
-    ) {
+    const describeMethod = callers.wrap(function (this: { prefix: string }, count: number) {
       return `${this.prefix}${count}`
     })
 
-    expectTypeOf(repeatLater).toEqualTypeOf<
-      (label: string, times: number) => Promise<string>
-    >()
-    expectTypeOf(countNow).toEqualTypeOf<
-      (...parts: string[]) => Promise<number>
-    >()
+    expectTypeOf(repeatLater).toEqualTypeOf<(label: string, times: number) => Promise<string>>()
+    expectTypeOf(countNow).toEqualTypeOf<(...parts: string[]) => Promise<number>>()
     // A declared receiver survives wrapping, so calling it wrongly is rejected.
     expectTypeOf<ThisParameterType<typeof describeMethod>>().toEqualTypeOf<{
       prefix: string
     }>()
-    expectTypeOf<ReturnType<typeof describeMethod>>().toEqualTypeOf<
-      Promise<string>
-    >()
+    expectTypeOf<ReturnType<typeof describeMethod>>().toEqualTypeOf<Promise<string>>()
 
     expect(await repeatLater("a", 2)).toBe("caller:acaller:a")
     expect(await countNow("a", "b")).toBe(2)
@@ -510,12 +470,9 @@ describe("type inference", () => {
     await withOverrides([provide(useHandler, () => "value")], () => {
       expect(useHandler()()).toBe("value")
     })
-    await withOverrides(
-      [provideFactory(useHandler, () => () => "factory")],
-      () => {
-        expect(useHandler()()).toBe("factory")
-      },
-    )
+    await withOverrides([provideFactory(useHandler, () => () => "factory")], () => {
+      expect(useHandler()()).toBe("factory")
+    })
   })
 
   it("infers every defineDependency form", () => {
@@ -526,7 +483,7 @@ describe("type inference", () => {
       dispose: (value: Closeable) => value.close(),
     })
     const useCreated = defineDependency(() => ({ close() {} }), {
-      dispose: (value) => value.close(),
+      dispose: value => value.close(),
     })
     const useDisposable = defineDependency(() => ({ [Symbol.dispose]() {} }), {
       dispose: true,
@@ -542,9 +499,7 @@ describe("type inference", () => {
       readonly dispose: (value: Closeable) => void
     }
     const useNamedFactory = defineDependency(namedFactory)
-    const useFactoryWithDisposeProperty = defineDependency(
-      factoryWithDisposeProperty,
-    )
+    const useFactoryWithDisposeProperty = defineDependency(factoryWithDisposeProperty)
 
     expectTypeOf(useUnknown).toEqualTypeOf<Dependency<unknown>>()
     expectTypeOf(useNamedUnknown).toEqualTypeOf<Dependency<unknown>>()
@@ -553,21 +508,15 @@ describe("type inference", () => {
     expectTypeOf(useCreated).toEqualTypeOf<Dependency<{ close(): void }>>()
     expectTypeOf(useDisposable).toEqualTypeOf<Dependency<Disposable>>()
     expectTypeOf(useFunction).toEqualTypeOf<Dependency<() => string>>()
-    expectTypeOf(useAlias).toEqualTypeOf<
-      Dependency<ReturnType<typeof useConfig>>
-    >()
+    expectTypeOf(useAlias).toEqualTypeOf<Dependency<ReturnType<typeof useConfig>>>()
     expectTypeOf(useNamedFactory).toEqualTypeOf<Dependency<Closeable>>()
-    expectTypeOf(useFactoryWithDisposeProperty).toEqualTypeOf<
-      Dependency<Closeable>
-    >()
+    expectTypeOf(useFactoryWithDisposeProperty).toEqualTypeOf<Dependency<Closeable>>()
   })
 
   it("types lifecycle handles as asynchronously disposable", () => {
     expectTypeOf<Scope>().toMatchTypeOf<AsyncDisposable>()
     expectTypeOf<Installation>().toMatchTypeOf<AsyncDisposable>()
-    expectTypeOf<
-      ReturnType<typeof createRuntime>
-    >().toMatchTypeOf<AsyncDisposable>()
+    expectTypeOf<ReturnType<typeof createRuntime>>().toMatchTypeOf<AsyncDisposable>()
   })
 
   it("awaits every callback form", async () => {
@@ -612,13 +561,11 @@ describe("type inference", () => {
     const globalStream = createDetachedStream(async function* () {
       yield 1
     })
-    const runtimeStream = runtime.createDetachedStream(
-      async function* (scope, signal) {
-        expectTypeOf(scope).toEqualTypeOf<Scope>()
-        expectTypeOf(signal).toEqualTypeOf<AbortSignal>()
-        yield "value"
-      },
-    )
+    const runtimeStream = runtime.createDetachedStream(async function* (scope, signal) {
+      expectTypeOf(scope).toEqualTypeOf<Scope>()
+      expectTypeOf(signal).toEqualTypeOf<AbortSignal>()
+      yield "value"
+    })
 
     expectTypeOf(globalCall).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(runtimeCall).toEqualTypeOf<Promise<number | string>>()
@@ -648,13 +595,13 @@ describe("type inference", () => {
 
   it("infers a value override helper", async () => {
     const useHandler = defineDependency<Handler>()
-    const withDb = createValueOverride(useDb, { dispose: (db) => void db.url })
+    const withDb = createValueOverride(useDb, { dispose: db => void db.url })
     const withHandler = createValueOverride(useHandler)
     const fake: Db = { url: "fake", query: async () => "fake rows" }
 
     const countOrLoad = (): number | Promise<string> => 1
     const counted = withDb(fake, () => 1)
-    const loaded = withDb(fake, async (scope) => scope.resolve(useDb).url)
+    const loaded = withDb(fake, async scope => scope.resolve(useDb).url)
     const mixed = withDb(fake, countOrLoad)
     const handled = withHandler(
       () => "handled",
@@ -668,7 +615,7 @@ describe("type inference", () => {
     expectTypeOf(loaded).toEqualTypeOf<Promise<string>>()
     expectTypeOf(mixed).toEqualTypeOf<Promise<number | string>>()
     expectTypeOf(handled).toEqualTypeOf<Promise<string>>()
-    withDb(fake, (scope) => {
+    withDb(fake, scope => {
       expectTypeOf(scope).toEqualTypeOf<Scope>()
     })
 
@@ -679,12 +626,9 @@ describe("type inference", () => {
   })
 
   it("infers awaitable values without unwrapping them", async () => {
-    const useQueryBuilder = defineDependency(
-      () => createQueryBuilder("infer"),
-      {
-        dispose: (builder) => void builder.url,
-      },
-    )
+    const useQueryBuilder = defineDependency(() => createQueryBuilder("infer"), {
+      dispose: builder => void builder.url,
+    })
     const useToken = defineDependency(() => asValue(loadToken()))
 
     expectTypeOf(useQueryBuilder).toEqualTypeOf<Dependency<QueryBuilder>>()

@@ -1,6 +1,6 @@
 import type { DependencyToken } from "./dependency"
 import type { RuntimeContext, ScopeContext } from "./graph"
-import { type ProvideOptions, type ProvisionInput, provide } from "./provide"
+import { provide, type ProvideOptions, type ProvisionInput } from "./provide"
 import { type Scope, withChildScope } from "./scope"
 
 /** Builds the provisions used by one call. */
@@ -57,17 +57,17 @@ class OverrideRunnerImpl implements OverrideRunner {
   ): Promise<Awaited<TCallbackResult>> {
     this.runtime.assertScopeManagementAllowed("OverrideRunner.run")
     // The innermost layer produces the result of the whole chain.
-    return this.enterLayers(
-      this.runtime.currentAmbientScope(),
-      callback,
-    ) as Promise<Awaited<TCallbackResult>>
+    return this.enterLayers(this.runtime.currentAmbientScope(), callback) as Promise<
+      Awaited<TCallbackResult>
+    >
   }
 
   wrap<TThis, TArgs extends unknown[], TCallbackResult>(
     callback: (this: TThis, ...args: TArgs) => TCallbackResult,
   ): (this: TThis, ...args: TArgs) => Promise<Awaited<TCallbackResult>> {
-    const runner = this
     // A function expression keeps the caller's receiver available to forward.
+    // oxlint-disable-next-line typescript/no-this-alias -- the wrapper's own `this` is the caller's receiver.
+    const runner = this
     return function wrapped(this: TThis, ...args: TArgs) {
       return runner.run(() => callback.apply(this, args))
     }
@@ -83,14 +83,10 @@ class OverrideRunnerImpl implements OverrideRunner {
    * Staying async keeps a failing provision factory a rejection instead of a
    * synchronous throw, exactly like an invalid provision list.
    */
-  private async enterLayers(
-    parent: ScopeContext,
-    callback: LayerCallback,
-  ): Promise<unknown> {
+  private async enterLayers(parent: ScopeContext, callback: LayerCallback): Promise<unknown> {
     // The base layer receives this one's entry as its callback, so the scopes
     // nest in extension order.
-    const enter = (scope: ScopeContext) =>
-      withChildScope(scope, this.factory(), callback)
+    const enter = (scope: ScopeContext) => withChildScope(scope, this.factory(), callback)
     return this.base ? this.base.enterLayers(parent, enter) : enter(parent)
   }
 }

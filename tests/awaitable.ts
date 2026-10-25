@@ -6,15 +6,12 @@ export interface QueryBuilder extends PromiseLike<string[]> {
   readonly url: string
 }
 
-export function createQueryBuilder(
-  url: string,
-  onQuery?: () => void,
-): QueryBuilder {
+export function createQueryBuilder(url: string, onQuery?: () => void): QueryBuilder {
   const rows = [`rows from ${url}`]
   return {
     url,
-    // biome-ignore lint/suspicious/noThenProperty: the awaitable value is the subject under test.
-    then: (onfulfilled) => {
+    // oxlint-disable-next-line unicorn/no-thenable -- the awaitable value is the subject under test.
+    then: onfulfilled => {
       onQuery?.()
       return Promise.resolve(rows).then(onfulfilled)
     },

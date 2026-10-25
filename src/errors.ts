@@ -42,10 +42,7 @@ export class CrossRuntimeDependencyError extends RippleError {
 export class InstallationConflictError extends RippleError {
   constructor(
     readonly runtimeName: string,
-    readonly reason:
-      | "active-installation"
-      | "closing-installation"
-      | "live-scopes",
+    readonly reason: "active-installation" | "closing-installation" | "live-scopes",
     readonly scopeNames: readonly string[] = [],
   ) {
     super(
@@ -58,7 +55,7 @@ export class InstallationConflictError extends RippleError {
             "install() again."
           : `Runtime "${runtimeName}" still has unfinished ` +
             `${scopeNames.length === 1 ? "scope" : "scopes"}: ` +
-            `${scopeNames.map((name) => `"${name}"`).join(", ")}. ` +
+            `${scopeNames.map(name => `"${name}"`).join(", ")}. ` +
             `Close ${scopeNames.length === 1 ? "it" : "them"} before ` +
             "calling install().",
     )
@@ -69,9 +66,7 @@ export class InstallationConflictError extends RippleError {
 /** The same dependency appears more than once in one provision list. */
 export class DuplicateProviderError extends RippleError {
   constructor(readonly dependencyName: string) {
-    super(
-      `Dependency "${dependencyName}" has more than one provision in the same scope.`,
-    )
+    super(`Dependency "${dependencyName}" has more than one provision in the same scope.`)
     this.name = "DuplicateProviderError"
   }
 }
@@ -171,10 +166,7 @@ export class ScopeClosedError extends RippleError {
     readonly scopeId: number,
     readonly state: ScopeState,
   ) {
-    super(
-      `Scope "${scopeName}" (#${scopeId}) is ${state}; ` +
-        `cannot use "${targetName}".`,
-    )
+    super(`Scope "${scopeName}" (#${scopeId}) is ${state}; ` + `cannot use "${targetName}".`)
     this.name = "ScopeClosedError"
   }
 }
@@ -201,9 +193,7 @@ export class FactoryScopeOperationError extends RippleError {
     readonly dependencyName: string,
     readonly operation: string,
   ) {
-    super(
-      `Factory for dependency "${dependencyName}" cannot call ${operation}.`,
-    )
+    super(`Factory for dependency "${dependencyName}" cannot call ${operation}.`)
     this.name = "FactoryScopeOperationError"
   }
 }

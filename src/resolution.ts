@@ -43,10 +43,7 @@ class ResolutionInvariantError extends RippleError {
 }
 
 /** Public and callable reads are tracked against the frame that initiated them. */
-export function resolveTracked<T>(
-  scope: ScopeContext,
-  node: DependencyNode<T>,
-): T {
+export function resolveTracked<T>(scope: ScopeContext, node: DependencyNode<T>): T {
   const consumerFrame = currentTracking()
 
   try {
@@ -60,11 +57,7 @@ export function resolveTracked<T>(
     }
     assertPubliclyReadable(scope, node.name)
     if (consumerFrame?.scope && consumerFrame.scope !== scope) {
-      throw new CrossScopeResolutionError(
-        node.name,
-        consumerFrame.scope.name,
-        scope.name,
-      )
+      throw new CrossScopeResolutionError(node.name, consumerFrame.scope.name, scope.name)
     }
     // Pin the frame before resolution, even if the provider later fails.
     // Subsequent reads must use the same runtime and scope.
@@ -109,10 +102,7 @@ export function resolveUntracked<T>(
 
   const provider = findEffectiveProvider(requestedScope, node)
   if (!provider || provider.spec.kind === "missing") {
-    throw new MissingProviderError(
-      node.name,
-      resolutionPath(asUnknownNode(node)),
-    )
+    throw new MissingProviderError(node.name, resolutionPath(asUnknownNode(node)))
   }
 
   if (provider.spec.kind === "value" || provider.spec.kind === "owned-value") {
@@ -120,10 +110,7 @@ export function resolveUntracked<T>(
       value: provider.spec.value,
       stamp: provider.stamp,
     }
-    requestedScope.viewCache.set(
-      asUnknownNode(node),
-      resolved as ResolutionRef<unknown>,
-    )
+    requestedScope.viewCache.set(asUnknownNode(node), resolved as ResolutionRef<unknown>)
     return resolved
   }
 
@@ -141,11 +128,7 @@ function findEffectiveProvider<T>(
   scope: ScopeContext,
   node: DependencyNode<T>,
 ): BoundProvider<T> | undefined {
-  for (
-    let cursor: ScopeContext | undefined = scope;
-    cursor;
-    cursor = cursor[scopeParent]
-  ) {
+  for (let cursor: ScopeContext | undefined = scope; cursor; cursor = cursor[scopeParent]) {
     const explicit = cursor.bindings.get(asUnknownNode(node))
     if (explicit) {
       return explicit as BoundProvider<T>
@@ -160,14 +143,8 @@ function findReusableAncestorCell<T>(
   provider: BoundProvider<T>,
 ): Cell<T> | undefined {
   // Cells owned by the requested scope itself are already in its view cache.
-  for (
-    let cursor = requestedScope[scopeParent];
-    cursor;
-    cursor = cursor[scopeParent]
-  ) {
-    const candidate = cursor.ownedCells.get(asUnknownNode(node)) as
-      | Cell<T>
-      | undefined
+  for (let cursor = requestedScope[scopeParent]; cursor; cursor = cursor[scopeParent]) {
+    const candidate = cursor.ownedCells.get(asUnknownNode(node)) as Cell<T> | undefined
     if (candidate && isReusable(candidate, provider, requestedScope)) {
       return candidate
     }
@@ -211,14 +188,12 @@ function materialize<T>(
   provider: BoundProvider<T>,
 ): Cell<T> {
   if (provider.spec.kind !== "factory") {
-    throw new Error(
-      "ripple-di attempted to materialize a non-factory provider.",
-    )
+    throw new Error("ripple-di attempted to materialize a non-factory provider.")
   }
 
   const start = cycleStart(asUnknownNode(node), provider.stamp as BindingStamp)
   if (start >= 0) {
-    const path = framesFrom(start).map((frame) => frame.node.name)
+    const path = framesFrom(start).map(frame => frame.node.name)
     throw new DependencyCycleError([...path, node.name])
   }
 
@@ -254,12 +229,10 @@ function materialize<T>(
     popEvaluation(frame)
   }
 
-  const dependencies = [...frame.dependencies].map(
-    ([dependencyNode, stamp]) => ({
-      dependency: dependencyNode.dependency,
-      stamp,
-    }),
-  )
+  const dependencies = [...frame.dependencies].map(([dependencyNode, stamp]) => ({
+    dependency: dependencyNode.dependency,
+    stamp,
+  }))
 
   // A reusable value belongs to the deepest scope among its provider and
   // dependencies so it cannot outlive them. These scopes all lie on the
@@ -267,15 +240,10 @@ function materialize<T>(
   const reusable = !frame.hasFailedDependencyRead
   const owner = !reusable
     ? requestedScope
-    : deepestScope([
-        provider.stamp.home,
-        ...dependencies.map((record) => record.stamp.home),
-      ])
+    : deepestScope([provider.stamp.home, ...dependencies.map(record => record.stamp.home)])
 
   if (!isAncestorOrSelf(owner, requestedScope)) {
-    throw new Error(
-      `ripple-di owner invariant failed for dependency "${node.name}".`,
-    )
+    throw new Error(`ripple-di owner invariant failed for dependency "${node.name}".`)
   }
 
   const cell: Cell<T> = {
@@ -313,8 +281,7 @@ function recordDependency<T>(
   const previous = frame.dependencies.get(unknownNode)
   if (previous && previous.identity !== stamp.identity) {
     throw new ResolutionInvariantError(
-      `Dependency "${node.name}" changed identity while evaluating ` +
-        `"${frame.name}".`,
+      `Dependency "${node.name}" changed identity while evaluating ` + `"${frame.name}".`,
     )
   }
   frame.dependencies.set(unknownNode, stamp as DependencyStamp)
@@ -393,11 +360,7 @@ export function propagateTrackedDependencies(
   if (consumer.scope && consumer.scope !== source.scope) {
     const dependency = source.dependencies.keys().next().value
     if (dependency) {
-      throw new CrossScopeResolutionError(
-        dependency.name,
-        consumer.scope.name,
-        source.scope.name,
-      )
+      throw new CrossScopeResolutionError(dependency.name, consumer.scope.name, source.scope.name)
     }
     return
   }
@@ -409,34 +372,19 @@ export function propagateTrackedDependencies(
   }
 }
 
-function assertCompatible<T>(
-  scope: ScopeContext,
-  node: DependencyNode<T>,
-): void {
+function assertCompatible<T>(scope: ScopeContext, node: DependencyNode<T>): void {
   if (scope.runtime !== node.runtime) {
-    throw new CrossRuntimeDependencyError(
-      node.name,
-      node.runtime.name,
-      scope.runtime.name,
-    )
+    throw new CrossRuntimeDependencyError(node.name, node.runtime.name, scope.runtime.name)
   }
 }
 
-function assertPubliclyReadable(
-  scope: ScopeContext,
-  dependencyName: string,
-): void {
+function assertPubliclyReadable(scope: ScopeContext, dependencyName: string): void {
   const owner = scope.runtime.teardown.getStore()
   if (owner) {
     throw new DisposerContextError(dependencyName, owner.name, owner.id)
   }
   if (scope.state !== "active") {
-    throw new ScopeClosedError(
-      dependencyName,
-      scope.name,
-      scope.id,
-      scope.state,
-    )
+    throw new ScopeClosedError(dependencyName, scope.name, scope.id, scope.state)
   }
 }
 
@@ -446,10 +394,7 @@ function assertPubliclyReadable(
  * While an ancestor closes its children, a child may still hold a cached
  * reference to that ancestor's cell.
  */
-function assertUsableRef<T>(
-  resolved: ResolutionRef<T>,
-  node: DependencyNode<T>,
-): void {
+function assertUsableRef<T>(resolved: ResolutionRef<T>, node: DependencyNode<T>): void {
   if (resolved.stamp.kind !== "cell") {
     return
   }
@@ -458,30 +403,16 @@ function assertUsableRef<T>(
     cell.state !== "ready" ||
     (cell.owner.state !== "active" && cell.owner.state !== "retiring")
   ) {
-    throw new ScopeClosedError(
-      node.name,
-      cell.owner.name,
-      cell.owner.id,
-      cell.owner.state,
-    )
+    throw new ScopeClosedError(node.name, cell.owner.name, cell.owner.id, cell.owner.state)
   }
 }
 
 function deepestScope(scopes: readonly ScopeContext[]): ScopeContext {
-  return scopes.reduce((deepest, scope) =>
-    scope.depth > deepest.depth ? scope : deepest,
-  )
+  return scopes.reduce((deepest, scope) => (scope.depth > deepest.depth ? scope : deepest))
 }
 
-function isAncestorOrSelf(
-  ancestor: ScopeContext,
-  scope: ScopeContext,
-): boolean {
-  for (
-    let cursor: ScopeContext | undefined = scope;
-    cursor;
-    cursor = cursor[scopeParent]
-  ) {
+function isAncestorOrSelf(ancestor: ScopeContext, scope: ScopeContext): boolean {
+  for (let cursor: ScopeContext | undefined = scope; cursor; cursor = cursor[scopeParent]) {
     if (cursor === ancestor) {
       return true
     }

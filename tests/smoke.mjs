@@ -8,8 +8,8 @@ import { setTimeout as abortableDelay } from "node:timers/promises"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import {
-  AsyncFactoryError,
   asValue,
+  AsyncFactoryError,
   collectProvisions,
   createDetachedStream,
   createOverrideRunner,
@@ -25,12 +25,11 @@ import {
   resolve,
   runDetached,
   ScopeClosedError,
-  withOverrides,
   withoutProvider,
+  withOverrides,
 } from "../dist/index.mjs"
 
-const delay = (milliseconds) =>
-  new Promise((resolve) => setTimeout(resolve, milliseconds))
+const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 
 // Shared by the groups that show which databases were built and closed.
 const closedDatabases = []
@@ -58,12 +57,9 @@ async function checkDefinitionSites() {
     runtime.defineFactoryDependency(),
   ]
   for (const dependency of dependencies) {
-    assert.throws(dependency, (error) => {
+    assert.throws(dependency, error => {
       assert.ok(error instanceof MissingProviderError)
-      assert.match(
-        error.dependencyName,
-        /^dependency#\d+ \(tests\/smoke\.mjs:\d+\)$/,
-      )
+      assert.match(error.dependencyName, /^dependency#\d+ \(tests\/smoke\.mjs:\d+\)$/)
       return true
     })
   }
@@ -72,13 +68,10 @@ async function checkDefinitionSites() {
 
 // Overrides survive an async context switch and stay isolated in parallel.
 async function checkScopedOverrides() {
-  const scopedUrl = await withOverrides(
-    [provide(useConfig, { url: "scoped" })],
-    async () => {
-      await delay(1)
-      return useDb().url
-    },
-  )
+  const scopedUrl = await withOverrides([provide(useConfig, { url: "scoped" })], async () => {
+    await delay(1)
+    return useDb().url
+  })
   assert.equal(scopedUrl, "scoped")
   assert.equal(useDb().url, "production")
 
@@ -94,12 +87,12 @@ async function checkScopedOverrides() {
 
 // A factory dependency resolves its factory per scope but never caches calls.
 async function checkFactoryDependency() {
-  const Create = defineFactoryDependency((label) => ({ label }))
+  const Create = defineFactoryDependency(label => ({ label }))
 
   assert.notEqual(Create("same"), Create("same"))
   await withOverrides(
-    provide(Create, (label) => ({ label: `test:${label}` })),
-    (scope) => {
+    provide(Create, label => ({ label: `test:${label}` })),
+    scope => {
       assert.deepEqual(Create("value"), { label: "test:value" })
       assert.equal(scope.resolve(Create)("resolved").label, "test:resolved")
     },
@@ -110,16 +103,8 @@ async function checkFactoryDependency() {
 async function checkInstallation() {
   const useTenant = defineDependency()
   const useFeature = defineDependency()
-  const featureProvisions = collectProvisions(
-    false,
-    [provide(useFeature, "enabled")],
-    undefined,
-  )
-  const installation = install(
-    provide(useTenant, "acme"),
-    null,
-    featureProvisions,
-  )
+  const featureProvisions = collectProvisions(false, [provide(useFeature, "enabled")], undefined)
+  const installation = install(provide(useTenant, "acme"), null, featureProvisions)
 
   assert.equal(useTenant(), "acme")
   assert.equal(useFeature(), "enabled")
@@ -131,16 +116,11 @@ async function checkOverrideRunner() {
   const useSession = defineDependency()
   const useRegion = defineDependency()
   let sessionCount = 0
-  const sessions = createOverrideRunner(() =>
-    provide(useSession, `session-${++sessionCount}`),
-  )
+  const sessions = createOverrideRunner(() => provide(useSession, `session-${++sessionCount}`))
   const regions = sessions.extend(() => provide(useRegion, "eu"))
 
   assert.equal(await sessions.run(() => useSession()), "session-1")
-  assert.equal(
-    await regions.run(() => `${useSession()}/${useRegion()}`),
-    "session-2/eu",
-  )
+  assert.equal(await regions.run(() => `${useSession()}/${useRegion()}`), "session-2/eu")
 }
 
 async function checkValueOverride() {
@@ -169,12 +149,7 @@ async function checkManualScope() {
 
 // Every scope above owned the database built from its own configuration.
 function checkOwnedValueCleanup() {
-  assert.deepEqual([...closedDatabases].sort(), [
-    "left",
-    "manual",
-    "right",
-    "scoped",
-  ])
+  assert.deepEqual([...closedDatabases].sort(), ["left", "manual", "right", "scoped"])
 }
 
 // Promise detection depends on the host runtime's native promise.
@@ -190,8 +165,8 @@ async function checkPromiseHandling() {
 async function checkAwaitableValue() {
   const useQueryBuilder = defineDependency(() => ({
     url: "builder",
-    // biome-ignore lint/suspicious/noThenProperty: the awaitable value is the subject under test.
-    then: (onfulfilled) => Promise.resolve(["rows"]).then(onfulfilled),
+    // oxlint-disable-next-line unicorn/no-thenable -- the awaitable value is the subject under test.
+    then: onfulfilled => Promise.resolve(["rows"]).then(onfulfilled),
   }))
   const queryBuilder = useQueryBuilder()
 
@@ -219,10 +194,7 @@ async function checkMultipleRuntimes() {
 
   assert.equal(await production.useDb().query(), "rows from production-db")
   assert.equal(await preview.useDb().query(), "rows from preview-db")
-  await Promise.all([
-    production.runtime[Symbol.asyncDispose](),
-    preview.runtime.dispose(),
-  ])
+  await Promise.all([production.runtime[Symbol.asyncDispose](), preview.runtime.dispose()])
 }
 
 // A detached stream keeps the request's overrides for every read after the
@@ -230,22 +202,20 @@ async function checkMultipleRuntimes() {
 async function checkDetached() {
   const controller = new AbortController()
   let streamSignal
-  const stream = await withOverrides(
-    provide(useConfig, { url: "detached" }),
-    () =>
-      createDetachedStream(
-        async function* (_scope, signal) {
-          streamSignal = signal
-          try {
-            yield useDb().url
-            yield useDb().url
-            await abortableDelay(60_000, undefined, { signal })
-          } finally {
-            assert.equal(useDb().url, "detached")
-          }
-        },
-        { signal: controller.signal },
-      ),
+  const stream = await withOverrides(provide(useConfig, { url: "detached" }), () =>
+    createDetachedStream(
+      async function* (_scope, signal) {
+        streamSignal = signal
+        try {
+          yield useDb().url
+          yield useDb().url
+          await abortableDelay(60_000, undefined, { signal })
+        } finally {
+          assert.equal(useDb().url, "detached")
+        }
+      },
+      { signal: controller.signal },
+    ),
   )
   const reader = stream[Symbol.asyncIterator]()
 
@@ -282,10 +252,7 @@ async function checkShutdown() {
 // The default entry writes no global state. After the opt-in entry, a physical
 // copy of the built files joins this copy's implementation.
 async function checkSharedCopies() {
-  assert.equal(
-    Symbol.for("ripple-di.shared-implementation") in globalThis,
-    false,
-  )
+  assert.equal(Symbol.for("ripple-di.shared-implementation") in globalThis, false)
   await import("../dist/shared.mjs")
 
   const directory = mkdtempSync(join(tmpdir(), "ripple-di-smoke-"))
@@ -299,16 +266,11 @@ async function checkSharedCopies() {
 
     const useUrl = copy.defineDependency(() => useDb().url)
     assert.equal(
-      await copy.withOverrides(provide(useConfig, { url: "shared" }), () =>
-        useUrl(),
-      ),
+      await copy.withOverrides(provide(useConfig, { url: "shared" }), () => useUrl()),
       "shared",
     )
     assert.ok(closedDatabases.includes("shared"))
-    assert.throws(
-      () => resolve(copy.defineDependency()),
-      copy.MissingProviderError,
-    )
+    assert.throws(() => resolve(copy.defineDependency()), copy.MissingProviderError)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

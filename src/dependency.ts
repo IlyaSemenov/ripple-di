@@ -24,8 +24,7 @@ export type Dependency<T> = (() => T) & DependencyToken<T>
  * An overrideable factory selected from the current scope and invoked with
  * ordinary runtime arguments.
  */
-export type FactoryDependency<TFactory extends AnyFactory> = TFactory &
-  DependencyToken<TFactory>
+export type FactoryDependency<TFactory extends AnyFactory> = TFactory & DependencyToken<TFactory>
 
 /** Optional diagnostics for a factory dependency. */
 export interface FactoryDependencyOptions {
@@ -139,9 +138,7 @@ class DependencyNodeImpl<T> implements DependencyNode<T> {
 }
 
 /** Captures and reduces a definition stack before it enters private metadata. */
-export function captureDefinitionSite(
-  caller: (...args: never) => unknown,
-): string | undefined {
+export function captureDefinitionSite(caller: (...args: never) => unknown): string | undefined {
   const error = new Error()
   // captureStackTrace omits internal frames through caller, leaving the
   // application's definition site first.
@@ -188,17 +185,15 @@ function definitionSiteFromFrame(frame: string): string | undefined {
 }
 
 /** Creates a property-free callable whose metadata lives only in a `WeakMap`. */
-export function createDependency<T>(
-  definition: DependencyDefinition<T>,
-): Dependency<T> {
-  return createCallableDependency(definition, (read) => read as Dependency<T>)
+export function createDependency<T>(definition: DependencyDefinition<T>): Dependency<T> {
+  return createCallableDependency(definition, read => read as Dependency<T>)
 }
 
 /** Creates a callable that resolves and invokes its factory value per call. */
 export function createFactoryDependency<TFactory extends AnyFactory>(
   definition: DependencyDefinition<TFactory>,
 ): FactoryDependency<TFactory> {
-  return createCallableDependency(definition, (read) => {
+  return createCallableDependency(definition, read => {
     const dependency = function (this: unknown, ...args: unknown[]) {
       return Reflect.apply(read(), this, args as never[])
     }

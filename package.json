@@ -1,49 +1,45 @@
 {
   "name": "ripple-di",
-  "type": "module",
   "version": "3.2.0",
   "description": "Next-generation DI for TypeScript with async scopes, transitive overrides, and automatic resource cleanup.",
   "keywords": [
+    "async-context",
+    "async-hooks",
+    "asynclocalstorage",
+    "dependency-graph",
     "dependency-injection",
+    "dependency-tracking",
     "di",
     "inversion-of-control",
     "ioc",
-    "service-locator",
-    "typescript",
-    "scoped",
-    "dependency-tracking",
-    "dependency-graph",
-    "async-context",
-    "asynclocalstorage",
-    "async-hooks",
     "lifecycle",
-    "testing"
+    "scoped",
+    "service-locator",
+    "testing",
+    "typescript"
   ],
-  "author": "Ilya Semenov",
+  "homepage": "https://github.com/IlyaSemenov/ripple-di#readme",
+  "bugs": "https://github.com/IlyaSemenov/ripple-di/issues",
   "license": "MIT",
-  "sideEffects": [
-    "./dist/shared.mjs"
-  ],
-  "engines": {
-    "node": ">=18.18.0"
-  },
-  "packageManager": "bun@1.4.4",
+  "author": "Ilya Semenov",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/IlyaSemenov/ripple-di.git"
   },
-  "homepage": "https://github.com/IlyaSemenov/ripple-di#readme",
-  "bugs": "https://github.com/IlyaSemenov/ripple-di/issues",
+  "files": [
+    "README.md",
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "./dist/shared.mjs"
+  ],
+  "types": "./dist/index.d.mts",
   "exports": {
     ".": "./dist/index.mjs",
     "./shared": "./dist/shared.mjs",
     "./package.json": "./package.json"
   },
-  "types": "./dist/index.d.mts",
-  "files": [
-    "README.md",
-    "dist"
-  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
@@ -55,16 +51,23 @@
     "smoke": "node tests/smoke.mjs",
     "types": "tsc && tsc -p tests/tsconfig.json",
     "prepublishOnly": "bun run build",
-    "lint": "biome check --write ."
+    "lint": "oxlint --fix && oxfmt",
+    "lint:check": "oxlint && oxfmt --check"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.5",
-    "@biomejs/biome": "^2.5.5",
     "@changesets/cli": "^3.0.3",
+    "@ilyasemenov/oxc-config": "^0.1.1",
     "@tsconfig/bun": "^1.0.10",
     "@types/bun": "^1.4.4",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.89.0",
     "publint": "^0.3.22",
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2"
-  }
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "packageManager": "bun@1.4.4"
 }

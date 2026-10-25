@@ -71,11 +71,7 @@ const CONDITIONAL_BRANCH_MODULUS = 2
 const LCG_MULTIPLIER = 1_664_525
 const LCG_INCREMENT = 1_013_904_223
 
-const MODEL_OPERATIONS: readonly ModelOperation[] = [
-  "sum",
-  "weighted",
-  "conditional",
-]
+const MODEL_OPERATIONS: readonly ModelOperation[] = ["sum", "weighted", "conditional"]
 
 const ROOT_SCOPE_INDEX = 0
 const LEVEL_ONE_SCOPE_INDEX = 1
@@ -111,10 +107,7 @@ async function verifySeed(seed: number) {
     const isInitialFactory = index === inputCount
     const dependencyCount = isInitialFactory
       ? MAX_FACTORY_DEPENDENCIES
-      : random.integer(
-          MIN_FACTORY_DEPENDENCIES,
-          Math.min(MAX_FACTORY_DEPENDENCIES, index),
-        )
+      : random.integer(MIN_FACTORY_DEPENDENCIES, Math.min(MAX_FACTORY_DEPENDENCIES, index))
     const node: FactoryNode = {
       kind: "factory",
       dependencies: random.distinctIntegers(dependencyCount, 0, index - 1),
@@ -132,9 +125,7 @@ async function verifySeed(seed: number) {
         () => ({
           value: evaluateNode(
             node,
-            (dependencyIndex) =>
-              valueAt(dependencies, dependencyIndex, "factory dependency")()
-                .value,
+            dependencyIndex => valueAt(dependencies, dependencyIndex, "factory dependency")().value,
           ),
         }),
         { name: `factory-${index}` },
@@ -184,12 +175,7 @@ async function verifySeed(seed: number) {
   const references = new Map<string, ReferenceValue>()
   for (const probe of probes) {
     const key = `${probe.scopeIndex}:${probe.nodeIndex}`
-    const reference = resolveReference(
-      model,
-      probe.nodeIndex,
-      probe.scope.reference,
-      new Map(),
-    )
+    const reference = resolveReference(model, probe.nodeIndex, probe.scope.reference, new Map())
     const actual = probe.scope.actual.resolve(
       valueAt(dependencies, probe.nodeIndex, "probe dependency"),
     )
@@ -203,11 +189,7 @@ async function verifySeed(seed: number) {
     }
   }
 
-  for (
-    let scopeIndex = LEVEL_ONE_SCOPE_INDEX;
-    scopeIndex < scopes.length;
-    scopeIndex += 1
-  ) {
+  for (let scopeIndex = LEVEL_ONE_SCOPE_INDEX; scopeIndex < scopes.length; scopeIndex += 1) {
     const scope = valueAt(scopes, scopeIndex, "scope under comparison")
     if (!scope.parent) {
       throw new Error(`seed=${seed}: child scope has no parent`)
@@ -248,10 +230,7 @@ function createRandomScope(
   dependencies: readonly Dependency<Box>[],
   random: ReturnType<typeof createRandom>,
 ): ScopePair {
-  const overrideCount = random.integer(
-    0,
-    Math.min(MAX_OVERRIDES_PER_SCOPE, inputCount),
-  )
+  const overrideCount = random.integer(0, Math.min(MAX_OVERRIDES_PER_SCOPE, inputCount))
   const inputs = random.distinctIntegers(overrideCount, 0, inputCount - 1)
   const overrides = new Map<number, ReferenceBinding>()
   const provisions: Provision[] = []
@@ -262,9 +241,7 @@ function createRandomScope(
       id: `${seed}:${scopeIndex}:${input}`,
       value,
     })
-    provisions.push(
-      provide(valueAt(dependencies, input, "overridden input"), { value }),
-    )
+    provisions.push(provide(valueAt(dependencies, input, "overridden input"), { value }))
   }
 
   return {
@@ -298,7 +275,7 @@ function resolveReference(
     }
   } else {
     const readValues = new Map<number, ReferenceValue>()
-    const value = evaluateNode(node, (dependencyIndex) => {
+    const value = evaluateNode(node, dependencyIndex => {
       const dependency = resolveReference(model, dependencyIndex, scope, cache)
       readValues.set(dependencyIndex, dependency)
       return dependency.value
@@ -316,10 +293,7 @@ function resolveReference(
   return result
 }
 
-function evaluateNode(
-  node: FactoryNode,
-  read: (dependencyIndex: number) => number,
-): number {
+function evaluateNode(node: FactoryNode, read: (dependencyIndex: number) => number): number {
   const index1 = valueAt(node.dependencies, 0, "factory dependency #1")
   const index2 = node.dependencies[1] ?? index1
   const index3 = node.dependencies[2] ?? index1
@@ -328,22 +302,13 @@ function evaluateNode(
     return (value1 + read(index2)) % MODEL_VALUE_MODULUS
   }
   if (node.operation === "weighted") {
-    return (
-      (value1 * WEIGHTED_OPERATION_FACTOR + read(index2)) % MODEL_VALUE_MODULUS
-    )
+    return (value1 * WEIGHTED_OPERATION_FACTOR + read(index2)) % MODEL_VALUE_MODULUS
   }
   return value1 % CONDITIONAL_BRANCH_MODULUS === 0 ? read(index2) : read(index3)
 }
 
-function findBinding(
-  scope: ReferenceScope,
-  input: number,
-): ReferenceBinding | undefined {
-  for (
-    let cursor: ReferenceScope | undefined = scope;
-    cursor;
-    cursor = cursor.parent
-  ) {
+function findBinding(scope: ReferenceScope, input: number): ReferenceBinding | undefined {
+  for (let cursor: ReferenceScope | undefined = scope; cursor; cursor = cursor.parent) {
     const binding = cursor.overrides.get(input)
     if (binding) {
       return binding
@@ -351,10 +316,7 @@ function findBinding(
   }
 }
 
-function mapsEqual(
-  left: ReadonlyMap<number, string>,
-  right: ReadonlyMap<number, string>,
-): boolean {
+function mapsEqual(left: ReadonlyMap<number, string>, right: ReadonlyMap<number, string>): boolean {
   if (left.size !== right.size) {
     return false
   }

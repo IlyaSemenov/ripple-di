@@ -10,8 +10,6 @@ const library = await import(new URL("./lib/index.mjs", import.meta.url).href)
 assert.equal(library.ripple.defineDependency, bundled.defineDependency)
 const useDouble = bundled.defineDependency(() => library.useBase() * 2)
 assert.equal(
-  await library.ripple.withOverrides(bundled.provide(library.useBase, 4), () =>
-    useDouble(),
-  ),
+  await library.ripple.withOverrides(bundled.provide(library.useBase, 4), () => useDouble()),
   8,
 )

@@ -25,17 +25,8 @@ import {
   InstallationConflictError,
   ScopeClosedError,
 } from "./errors"
-import {
-  assertOutsideTracking,
-  currentEvaluation,
-  currentTracking,
-} from "./evaluation"
-import type {
-  BoundProvider,
-  DependencyNode,
-  RuntimeContext,
-  ScopeContext,
-} from "./graph"
+import { assertOutsideTracking, currentEvaluation, currentTracking } from "./evaluation"
+import type { BoundProvider, DependencyNode, RuntimeContext, ScopeContext } from "./graph"
 import {
   createOverrideRunnerFor,
   createValueOverrideFor,
@@ -204,10 +195,7 @@ class RuntimeImpl implements RuntimeContext {
   readonly teardown = new AsyncLocalStorage<ScopeContext>()
   readonly root: ScopeImpl
 
-  private readonly defaults = new Map<
-    DependencyNode<unknown>,
-    BoundProvider<unknown>
-  >()
+  private readonly defaults = new Map<DependencyNode<unknown>, BoundProvider<unknown>>()
   private activeInstallation: InstallationImpl | undefined
   private closingInstallation: InstallationImpl | undefined
 
@@ -241,17 +229,13 @@ class RuntimeImpl implements RuntimeContext {
    * application's own call and not the delegating wrapper.
    */
   defineDependencyAt<T>(
-    factoryOrOptions:
-      | (() => FactoryResult<T>)
-      | DependencyOptions<T>
-      | undefined,
+    factoryOrOptions: (() => FactoryResult<T>) | DependencyOptions<T> | undefined,
     maybeOptions: DependencyOptions<T> | undefined,
     definitionSite: string | undefined,
   ): Dependency<T> {
     const isFactory = typeof factoryOrOptions === "function"
     const factory = isFactory ? factoryOrOptions : undefined
-    const options: DependencyOptions<T> =
-      (isFactory ? maybeOptions : factoryOrOptions) ?? {}
+    const options: DependencyOptions<T> = (isFactory ? maybeOptions : factoryOrOptions) ?? {}
 
     return createDependency({
       name: options.name ?? (factory?.name || undefined),
@@ -302,12 +286,7 @@ class RuntimeImpl implements RuntimeContext {
   install(...provisions: ProvisionCollectionInput[]): Installation {
     this.assertScopeManagementAllowed("Runtime.install")
     if (this.root.state !== "active") {
-      throw new ScopeClosedError(
-        "Runtime.install",
-        this.root.name,
-        this.root.id,
-        this.root.state,
-      )
+      throw new ScopeClosedError("Runtime.install", this.root.name, this.root.id, this.root.state)
     }
     if (this.activeInstallation) {
       throw new InstallationConflictError(this.name, "active-installation")
@@ -319,7 +298,7 @@ class RuntimeImpl implements RuntimeContext {
       throw new InstallationConflictError(
         this.name,
         "live-scopes",
-        [...this.root.children].map((scope) => scope.name),
+        [...this.root.children].map(scope => scope.name),
       )
     }
 
@@ -354,21 +333,17 @@ class RuntimeImpl implements RuntimeContext {
     callback: (scope: Scope) => TCallbackResult,
   ): Promise<Awaited<TCallbackResult>> {
     this.assertScopeManagementAllowed("Runtime.runDetached")
-    return runDetachedScopeContext(
-      this.baseScope(),
-      this.currentAmbientScope(),
-      async (scope) => {
-        const result = await callback(scope)
-        if (isGeneratorObject(result)) {
-          throw new TypeError(
-            "runDetached callback returned a generator, which would " +
-              "run after the detached context closes. Open the source with " +
-              "createDetachedStream instead.",
-          )
-        }
-        return result
-      },
-    )
+    return runDetachedScopeContext(this.baseScope(), this.currentAmbientScope(), async scope => {
+      const result = await callback(scope)
+      if (isGeneratorObject(result)) {
+        throw new TypeError(
+          "runDetached callback returned a generator, which would " +
+            "run after the detached context closes. Open the source with " +
+            "createDetachedStream instead.",
+        )
+      }
+      return result
+    })
   }
 
   createDetachedStream<T>(
@@ -376,12 +351,7 @@ class RuntimeImpl implements RuntimeContext {
     options?: DetachedStreamOptions,
   ): DetachedStream<T> {
     this.assertScopeManagementAllowed("Runtime.createDetachedStream")
-    return createDetachedScopeStream(
-      this.baseScope(),
-      this.currentAmbientScope(),
-      open,
-      options,
-    )
+    return createDetachedScopeStream(this.baseScope(), this.currentAmbientScope(), open, options)
   }
 
   createOverrideRunner(factory: ProvisionFactory): OverrideRunner {
@@ -452,16 +422,9 @@ class RuntimeImpl implements RuntimeContext {
     if (frame) {
       if (frame.runtime && frame.runtime !== this) {
         frame.hasFailedDependencyRead = true
-        throw new CrossRuntimeDependencyError(
-          node.name,
-          this.name,
-          frame.runtime.name,
-        )
+        throw new CrossRuntimeDependencyError(node.name, this.name, frame.runtime.name)
       }
-      return resolveTracked(
-        frame.scope ?? this.ambient.getStore() ?? this.baseScope(),
-        node,
-      )
+      return resolveTracked(frame.scope ?? this.ambient.getStore() ?? this.baseScope(), node)
     }
 
     return resolveTracked(this.ambient.getStore() ?? this.baseScope(), node)
@@ -497,11 +460,7 @@ class RuntimeImpl implements RuntimeContext {
     if (frame) {
       if (frame.runtime !== this) {
         frame.hasFailedDependencyRead = true
-        throw new CrossRuntimeDependencyError(
-          operation,
-          this.name,
-          frame.runtime.name,
-        )
+        throw new CrossRuntimeDependencyError(operation, this.name, frame.runtime.name)
       }
       return frame.scope
     }
@@ -521,11 +480,7 @@ class RuntimeImpl implements RuntimeContext {
 
   private assertOwnDependency<T>(node: DependencyNode<T>): void {
     if (node.runtime !== this) {
-      throw new CrossRuntimeDependencyError(
-        node.name,
-        node.runtime.name,
-        this.name,
-      )
+      throw new CrossRuntimeDependencyError(node.name, node.runtime.name, this.name)
     }
   }
 }
@@ -566,9 +521,7 @@ const globalRuntime = new RuntimeImpl({ name: "global" })
  * Supply it through an installation or scope before reading it.
  * A configured disposer applies only to values Ripple DI owns.
  */
-export function defineDependency<T>(
-  options?: DependencyOptions<T>,
-): Dependency<T>
+export function defineDependency<T>(options?: DependencyOptions<T>): Dependency<T>
 /**
  * Defines a dependency with a lazy built-in factory.
  *
@@ -625,9 +578,7 @@ export function defineFactoryDependency<TFactory extends AnyFactory>(
  * Scoped overrides still take priority. Close the returned installation to
  * remove its providers and clean up everything created from them.
  */
-export function install(
-  ...provisions: ProvisionCollectionInput[]
-): Installation {
+export function install(...provisions: ProvisionCollectionInput[]): Installation {
   return globalRuntime.install(...provisions)
 }
 
@@ -704,9 +655,7 @@ export function createDetachedStream<T>(
  * The factory runs again for every call, so a call can own the values it
  * provides.
  */
-export function createOverrideRunner(
-  factory: ProvisionFactory,
-): OverrideRunner {
+export function createOverrideRunner(factory: ProvisionFactory): OverrideRunner {
   return globalRuntime.createOverrideRunner(factory)
 }
 

@@ -2,8 +2,8 @@
 import {
   type Dependency,
   type MissingProviderError,
-  type Provision,
   provide,
+  type Provision,
   resolve,
 } from "ripple-di"
 

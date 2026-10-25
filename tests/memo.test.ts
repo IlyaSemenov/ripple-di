@@ -2,14 +2,14 @@ import { describe, expect, it } from "bun:test"
 
 import {
   AsyncMemoError,
+  createRuntime,
   CrossRuntimeDependencyError,
   CrossScopeResolutionError,
-  createRuntime,
   DisposerContextError,
-  MemoCycleError,
-  MemoScopeOperationError,
   memo,
+  MemoCycleError,
   memoize,
+  MemoScopeOperationError,
   provide,
 } from "ripple-di"
 
@@ -52,9 +52,7 @@ describe("dependency-aware memoization", () => {
   it("tracks factory dependencies and reads made by their invocation", async () => {
     const runtime = createRuntime()
     const Config = runtime.defineDependency(() => "root")
-    const MakeThing = runtime.defineFactoryDependency(
-      (id: number) => `${id}:${Config()}`,
-    )
+    const MakeThing = runtime.defineFactoryDependency((id: number) => `${id}:${Config()}`)
     let calls = 0
 
     class Example {
@@ -74,9 +72,7 @@ describe("dependency-aware memoization", () => {
     expect(configScope.run(() => example.thing)).toBe("7:configured")
     await configScope.close()
 
-    const factoryScope = runtime.createScope(
-      provide(MakeThing, (id) => `${id}:replacement`),
-    )
+    const factoryScope = runtime.createScope(provide(MakeThing, id => `${id}:replacement`))
     expect(factoryScope.run(() => example.thing)).toBe("7:replacement")
     expect(calls).toBe(3)
     await factoryScope.close()
@@ -247,13 +243,9 @@ describe("dependency-aware memoization", () => {
     try {
       asynchronous()
     } catch (error) {
-      expect((error as AsyncMemoError).computationName).toBe(
-        "loadAsynchronously",
-      )
+      expect((error as AsyncMemoError).computationName).toBe("loadAsynchronously")
     }
-    expect(() => Reflect.apply(computation, undefined, ["argument"])).toThrow(
-      TypeError,
-    )
+    expect(() => Reflect.apply(computation, undefined, ["argument"])).toThrow(TypeError)
     expect(() => Reflect.apply(computation, null, [])).toThrow(TypeError)
   })
 
@@ -270,15 +262,13 @@ describe("dependency-aware memoization", () => {
 
     let error: unknown
     try {
-      new Example().value
+      void new Example().value
     } catch (caught) {
       error = caught
     }
     expect(error).toBeInstanceOf(MemoScopeOperationError)
     expect((error as MemoScopeOperationError).computationName).toBe("value")
-    expect((error as MemoScopeOperationError).operation).toBe(
-      "Runtime.createScope",
-    )
+    expect((error as MemoScopeOperationError).operation).toBe("Runtime.createScope")
     await runtime.dispose()
   })
 
@@ -303,9 +293,7 @@ describe("dependency-aware memoization", () => {
     const result = computation()
     expect(result.value).toBe("value")
     expect(boundError).toBeInstanceOf(MemoScopeOperationError)
-    expect((boundError as MemoScopeOperationError).operation).toBe(
-      "Runtime.createScope",
-    )
+    expect((boundError as MemoScopeOperationError).operation).toBe("Runtime.createScope")
     await result.scope.close()
     await boundRuntime.dispose()
     await independentRuntime.dispose()
@@ -329,7 +317,7 @@ describe("dependency-aware memoization", () => {
 
     let error: unknown
     try {
-      new Example().left
+      void new Example().left
     } catch (caught) {
       error = caught
     }
@@ -359,14 +347,8 @@ describe("dependency-aware memoization", () => {
       error = caught
     }
     expect(error).toBeInstanceOf(MemoCycleError)
-    expect((error as MemoCycleError).path).toEqual([
-      "summary",
-      "bridge",
-      "summary",
-    ])
-    expect((error as Error).message).toBe(
-      "Memo cycle: summary \u2192 bridge \u2192 summary.",
-    )
+    expect((error as MemoCycleError).path).toEqual(["summary", "bridge", "summary"])
+    expect((error as Error).message).toBe("Memo cycle: summary \u2192 bridge \u2192 summary.")
     await runtime.dispose()
   })
 
@@ -378,9 +360,7 @@ describe("dependency-aware memoization", () => {
     const computation = memoize(() => requestedScope.resolve(Value))
     const Derived = runtime.defineDependency(() => computation())
 
-    expect(() => factoryScope.resolve(Derived)).toThrow(
-      CrossScopeResolutionError,
-    )
+    expect(() => factoryScope.resolve(Derived)).toThrow(CrossScopeResolutionError)
     await requestedScope.close()
     await factoryScope.close()
     await runtime.dispose()
@@ -416,18 +396,15 @@ describe("dependency-aware memoization", () => {
     const Value = runtime.defineDependency(() => "value")
     const computation = memoize(() => Value())
     let disposerError: unknown
-    const Resource = runtime.defineDependency(
-      () => ({ value: computation() }),
-      {
-        dispose: () => {
-          try {
-            computation()
-          } catch (error) {
-            disposerError = error
-          }
-        },
+    const Resource = runtime.defineDependency(() => ({ value: computation() }), {
+      dispose: () => {
+        try {
+          computation()
+        } catch (error) {
+          disposerError = error
+        }
       },
-    )
+    })
 
     expect(Resource().value).toBe("value")
     await runtime.dispose()
