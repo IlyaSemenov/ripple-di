@@ -49,7 +49,7 @@
     "prepare": "lefthook install",
     "test": "bun test",
     "smoke": "node tests/smoke.mjs",
-    "types": "tsc && tsc -p tests/tsconfig.json",
+    "types": "bun check && bun check -p tests",
     "prepublishOnly": "bun run build",
     "lint": "oxlint --fix && oxfmt",
     "lint:check": "oxlint && oxfmt --check"

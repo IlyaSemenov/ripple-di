@@ -135,14 +135,15 @@ describe("bundled and external copies", () => {
 })
 
 describe("public types of separately installed copies", () => {
-  const tsc = join(repository, "node_modules", ".bin", "tsc")
-
   it("are compatible for the same version", () => {
-    expect(run(tsc, "-p", "tsconfig.same.json")).toEqual(success)
+    expect(run(process.execPath, "check", "-p", "tsconfig.same.json")).toMatchObject({
+      exitCode: 0,
+      stdout: "",
+    })
   })
 
   it("are incompatible for different versions", () => {
-    const result = run(tsc, "-p", "tsconfig.other.json")
+    const result = run(process.execPath, "check", "-p", "tsconfig.other.json")
     expect(result.exitCode).not.toBe(0)
     expect(result.stdout).toContain("types-other.ts")
     expect(result.stdout).toContain("TS2345")
