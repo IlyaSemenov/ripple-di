@@ -409,6 +409,24 @@ test("lists users", testConfigOverrides.wrap(() => listUsers()))
 test("creates a user", testConfigOverrides.wrap(() => createUser()))
 ```
 
+Some test runners repeat suite hooks in one process without evaluating the preload again, such as Bun with `--rerun-each`.
+Because `dispose()` closes the runtime for good, a preload that installs once and calls `dispose()` in `afterAll` fails on the second run.
+Run each repetition in a separate process, or install in `beforeAll` and close that installation in `afterAll`:
+
+```ts
+import { install, type Installation } from "ripple-di"
+
+let installation: Installation
+
+beforeAll(() => {
+  installation = install(getTestProvisions())
+})
+
+afterAll(() => installation.close())
+```
+
+Build the provisions inside `beforeAll`, because a provision that hands over ownership of a value cannot be installed again.
+
 ## Advanced usage
 
 Everything below is optional.
