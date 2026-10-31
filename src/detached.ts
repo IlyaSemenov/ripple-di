@@ -95,14 +95,16 @@ async function replayDetachedLayers<TCallbackResult>(
 }
 
 /**
- * An async source whose reads keep the dependency context it was opened in
- * until it finishes or the reader closes it.
+ * An async source opened with `createDetachedStream`.
+ *
+ * Read it with `for await` or declare it with `await using`, so that its
+ * scopes close when the reader leaves.
  */
 export type DetachedStream<T> = AsyncIterable<T> & AsyncDisposable
 
-/** Controls cancellation of a detached stream. */
+/** Options for `createDetachedStream`. */
 export interface DetachedStreamOptions {
-  /** Cancels the source and starts cleanup even if the stream has never been read. */
+  /** Closes the stream when aborted, even if it has never been read. */
   signal?: AbortSignal
 }
 

@@ -3,7 +3,7 @@ import type { ScopeState } from "./scope"
 /** Base class for errors thrown by Ripple DI. */
 export class RippleError extends Error {}
 
-/** The dependency was requested without a provider or built-in factory. */
+/** A dependency was called without a provided value or a factory of its own. */
 export class MissingProviderError extends RippleError {
   constructor(
     readonly dependencyName: string,
@@ -38,7 +38,7 @@ export class CrossRuntimeDependencyError extends RippleError {
   }
 }
 
-/** `install()` was called while another installation or scope was unfinished. */
+/** `install()` was called while another installation or a scope was still open. */
 export class InstallationConflictError extends RippleError {
   constructor(
     readonly runtimeName: string,
@@ -71,7 +71,7 @@ export class DuplicateProviderError extends RippleError {
   }
 }
 
-/** One owned-value provision was installed for more than one owner. */
+/** A provision that hands a value over was used for a second scope or installation. */
 export class OwnedProvisionReuseError extends RippleError {
   constructor(readonly dependencyName: string) {
     super(
@@ -82,7 +82,7 @@ export class OwnedProvisionReuseError extends RippleError {
   }
 }
 
-/** A detached context cannot reproduce a provision that owns its value. */
+/** Detached work was started while an override that hands its value over was active. */
 export class DetachedContextOwnedProvisionError extends RippleError {
   constructor(
     readonly dependencyName: string,
@@ -171,7 +171,7 @@ export class ScopeClosedError extends RippleError {
   }
 }
 
-/** A factory or memo computation tried to read explicitly from a different scope. */
+/** A dependency factory or memo tried to read from a scope other than its own. */
 export class CrossScopeResolutionError extends RippleError {
   constructor(
     readonly dependencyName: string,
@@ -187,7 +187,7 @@ export class CrossScopeResolutionError extends RippleError {
   }
 }
 
-/** A dependency factory tried to manage runtime context or lifecycle. */
+/** A dependency factory tried to create, enter, or close a scope or installation. */
 export class FactoryScopeOperationError extends RippleError {
   constructor(
     readonly dependencyName: string,
@@ -198,7 +198,7 @@ export class FactoryScopeOperationError extends RippleError {
   }
 }
 
-/** A memo computation tried to manage runtime context or lifecycle. */
+/** A memo tried to create, enter, or close a scope or installation. */
 export class MemoScopeOperationError extends RippleError {
   constructor(
     readonly computationName: string,
@@ -209,7 +209,7 @@ export class MemoScopeOperationError extends RippleError {
   }
 }
 
-/** Code running in or started by a disposer used the runtime being closed. */
+/** A disposer, or work it started, used the runtime being closed. */
 export class DisposerContextError extends RippleError {
   constructor(
     readonly targetName: string,

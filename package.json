@@ -18,7 +18,7 @@
     "testing",
     "typescript"
   ],
-  "homepage": "https://github.com/IlyaSemenov/ripple-di#readme",
+  "homepage": "https://ilyasemenov.github.io/ripple-di/",
   "bugs": "https://github.com/IlyaSemenov/ripple-di/issues",
   "license": "MIT",
   "author": "Ilya Semenov",
@@ -46,6 +46,9 @@
   },
   "scripts": {
     "build": "tsdown",
+    "docs:build": "vitepress build docs",
+    "docs:dev": "vitepress dev docs",
+    "docs:preview": "vitepress preview docs",
     "prepare": "lefthook install",
     "test": "bun test",
     "smoke": "node tests/smoke.mjs",
@@ -64,7 +67,8 @@
     "oxlint": "^1.89.0",
     "publint": "^0.3.22",
     "tsdown": "^0.22.14",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitepress": "^1.6.4"
   },
   "engines": {
     "node": ">=18.18.0"

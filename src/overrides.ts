@@ -3,40 +3,38 @@ import type { RuntimeContext, ScopeContext } from "./graph"
 import { provide, type ProvideOptions, type ProvisionInput } from "./provide"
 import { type Scope, withChildScope } from "./scope"
 
-/** Builds the provisions used by one call. */
+/** Builds the provisions for one call of an override runner. */
 export type ProvisionFactory = () => ProvisionInput
 
 /**
- * A prepared set of overrides applied separately to each call.
+ * A set of overrides applied to each call in a scope of its own.
  *
- * Use it when a long-lived object runs every operation in its own short-lived
- * scope with the same providers.
+ * Create it with `createOverrideRunner`.
  */
 export interface OverrideRunner {
   /**
-   * Runs a callback with this runner's overrides.
+   * Runs a callback with the runner's overrides in a new scope.
    *
-   * Every call gets its own scope, so concurrent calls stay isolated, and the
-   * scope is cleaned up when the callback finishes.
+   * Concurrent calls stay isolated, and the scope is cleaned up when the
+   * callback finishes.
    */
   run<TCallbackResult>(
     callback: (scope: Scope) => TCallbackResult,
   ): Promise<Awaited<TCallbackResult>>
   /**
-   * Returns a function that runs the given one with these overrides.
+   * Returns a function that calls the given one through `run`.
    *
-   * Every call of the returned function is one `run` call that forwards the
-   * arguments and the receiver it was called with, so nothing exists before
-   * the returned function is called.
+   * The returned function passes its arguments and `this` through, and each
+   * of its calls is a separate `run`.
    */
   wrap<TThis, TArgs extends unknown[], TCallbackResult>(
     callback: (this: TThis, ...args: TArgs) => TCallbackResult,
   ): (this: TThis, ...args: TArgs) => Promise<Awaited<TCallbackResult>>
   /**
-   * Returns a runner that adds more overrides on top of these ones.
+   * Returns a runner with more overrides on top of these ones.
    *
-   * The added overrides replace the ones they share a dependency with, and
-   * this runner keeps working on its own.
+   * Where both provide the same dependency, the added overrides win.
+   * This runner stays unchanged.
    */
   extend(factory: ProvisionFactory): OverrideRunner
 }
@@ -114,10 +112,9 @@ export function createOverrideRunnerFor(
 }
 
 /**
- * Replaces one dependency with a value for the duration of a callback.
+ * Runs a callback with a value provided for one dependency.
  *
- * Create it with `createValueOverride` for a dependency that application code
- * replaces the same way again and again.
+ * Create it with `createValueOverride`.
  */
 export type ValueOverride<T> = <TCallbackResult>(
   value: T,

@@ -44,46 +44,47 @@ import { resolveTracked } from "./resolution"
 import { type Scope, ScopeImpl, withChildScope } from "./scope"
 import type { FactoryResult } from "./value"
 
-/** Options for starting an independent dependency graph. */
+/** Options for `createRuntime`. */
 export interface RuntimeOptions {
-  /** Human-readable name used in scope names and error messages. */
+  /** Name shown in error messages. */
   readonly name?: string
 }
 
 /**
- * Long-lived providers used as the default application wiring for a runtime.
+ * The application's values supplied with `install`.
  *
- * Close the installation to remove its providers and clean up the scopes and
- * owned values created beneath it.
+ * Close it before installing a replacement.
  */
 export interface Installation extends AsyncDisposable {
-  /** Removes these providers and closes everything owned beneath them. */
+  /**
+   * Closes the scopes created beneath the installation, removes the installed
+   * values, and cleans up the values that the installation and those scopes
+   * own.
+   */
   close(): Promise<void>
 }
 
 /**
- * An independent dependency graph with its own definitions, cached values,
- * and lifecycle.
+ * An independent dependency graph with its own dependencies, cached values,
+ * and shutdown.
  *
- * Most applications can use the module-level functions and do not need to
- * create a runtime explicitly.
- * Installation and scope management methods cannot be called from one of this
- * runtime's dependency factories or disposers.
+ * Most applications use the module-level functions, which work with one
+ * built-in runtime, and never create a runtime of their own.
  */
 export interface Runtime extends AsyncDisposable {
   /**
-   * Defines a dependency with no built-in value.
+   * Defines a dependency whose value is provided at an application, request,
+   * or task boundary.
    *
-   * Supply it through an installation or scope before reading it.
-   * A configured disposer applies only to values Ripple DI owns.
+   * Provide it with `install` or `withOverrides` before calling it.
    */
   defineDependency<T>(options?: DependencyOptions<T>): Dependency<T>
 
   /**
-   * Defines a dependency with a lazy built-in factory.
+   * Defines a dependency whose value a factory builds on first use.
    *
-   * The result is cached. A scope gets a separate result when it overrides a
-   * dependency that the factory called.
+   * The value is cached, and a scope that overrides a dependency the factory
+   * called gets a value of its own.
    */
   defineDependency<T>(
     factory: () => FactoryResult<T>,
@@ -91,10 +92,11 @@ export interface Runtime extends AsyncDisposable {
   ): Dependency<T>
 
   /**
-   * Defines an overrideable factory invoked with ordinary runtime arguments.
+   * Defines a replaceable function that application code calls with runtime
+   * arguments.
    *
-   * Each call resolves the current factory and invokes it without caching or
-   * owning the result.
+   * Each call invokes the function selected for the current scope, whose
+   * results are neither cached nor cleaned up.
    */
   defineFactoryDependency<TFactory extends AnyFactory>(
     factory: TFactory,
@@ -102,31 +104,40 @@ export interface Runtime extends AsyncDisposable {
   ): FactoryDependency<TFactory>
 
   /**
-   * Defines an overrideable factory with no built-in implementation.
+   * Defines a replaceable function with no built-in implementation.
    *
-   * Supply it through an installation or scope before calling it.
+   * Provide it with `install` or `withOverrides` before calling it.
    */
   defineFactoryDependency<TFactory extends AnyFactory>(
     options?: FactoryDependencyOptions,
   ): FactoryDependency<TFactory>
 
   /**
-   * Installs long-lived providers as the fallback beneath scoped overrides.
+   * Supplies the application's values for the whole runtime.
    *
-   * A runtime can have one active installation, and previously created scopes
-   * must be fully closed before this method is called.
+   * Installed values apply wherever no scope overrides them.
+   * Install once during startup, before creating any scope, and close the
+   * returned installation before installing a replacement.
    */
   install(...provisions: ProvisionCollectionInput[]): Installation
 
-  /** Returns a dependency value from the current scope. */
+  /** Returns the value of a dependency in the current scope. */
   resolve<T>(dependency: DependencyToken<T>): T
 
-  /** Creates a manually managed child of the current scope. */
+  /**
+   * Creates a scope with the given overrides beneath the current one.
+   *
+   * Close it when the work that shares it ends.
+   */
   createScope(provisions?: ProvisionInput): Scope
 
   /**
-   * Runs a callback with temporary overrides and cleans up everything created
-   * for the callback afterward.
+   * Runs a callback with temporary overrides.
+   *
+   * The overrides stay active across `await` and isolated from concurrent
+   * callbacks.
+   * The callback's result is awaited, and then the values created for the
+   * callback are cleaned up.
    */
   withOverrides<TCallbackResult>(
     provisions: ProvisionInput,
@@ -134,32 +145,30 @@ export interface Runtime extends AsyncDisposable {
   ): Promise<Awaited<TCallbackResult>>
 
   /**
-   * Continues the current dependency context outside its original scope.
+   * Runs a callback that keeps the current overrides after the current scope
+   * closes.
    *
-   * The runtime reproduces every current override layer beneath its active
-   * installation or root without copying cached dependency values.
+   * The overrides are applied again in new scopes, which are cleaned up after
+   * the callback finishes.
+   * Values handed over with `dispose` cannot be carried over.
+   * Open an async generator with `createDetachedStream` instead.
    */
   runDetached<TCallbackResult>(
     callback: (scope: Scope) => TCallbackResult,
   ): Promise<Awaited<TCallbackResult>>
 
   /**
-   * Opens an async source inside the current dependency context and keeps
-   * that context for every read until the source finishes or the reader
-   * closes the stream.
+   * Opens an async source that keeps the current overrides for every read,
+   * even after the current scope closes.
    *
-   * Pass the signal from `open` to operations that need to stop promptly;
-   * cancellation waits for operations without signal support to finish.
-   * External cancellation and `return()` abort that signal immediately and
-   * keep the scopes open until the source finishes cleanup.
-   * A `throw()` that the source recovers from does not cancel the signal.
-   * Source completion or failure also aborts the signal.
-   * New reads after cancellation return `done`; pending reads keep their
-   * values or non-cancellation errors.
-   * A source error from a read or `return()` becomes `done` only when the
-   * signal is aborted and the error equals `signal.reason` or has name `AbortError`.
-   * All other source errors and every dependency cleanup error remain observable.
-   * Await `return()` or `Symbol.asyncDispose` to observe background cleanup failures.
+   * `open` runs immediately, and its scopes close when the source finishes, a
+   * read fails, the reader leaves, or `options.signal` aborts.
+   * Pass the signal given to `open` to the operations inside the source so that
+   * they stop promptly when the stream closes.
+   * After that signal aborts, an error that is its `reason` or is named
+   * `AbortError` ends the stream normally.
+   * After external cancellation, await `return()` or `Symbol.asyncDispose` to
+   * wait for cleanup and see its errors.
    */
   createDetachedStream<T>(
     open: (scope: Scope, signal: AbortSignal) => AsyncIterable<T>,
@@ -167,21 +176,32 @@ export interface Runtime extends AsyncDisposable {
   ): DetachedStream<T>
 
   /**
-   * Prepares overrides that are applied again to each call of the returned
-   * runner.
+   * Creates a runner that applies the same overrides to each call in a scope
+   * of its own.
+   *
+   * `factory` runs again for every call, so each call can hand over values of
+   * its own.
    */
   createOverrideRunner(factory: ProvisionFactory): OverrideRunner
 
   /**
-   * Prepares a reusable helper that replaces one dependency with a value for
-   * one callback.
+   * Creates a helper that provides a value for one dependency during a
+   * callback.
+   *
+   * Use it for a replacement repeated in several places.
+   * Ownership options given here apply to every value the helper receives.
    */
   createValueOverride<T>(
     dependency: DependencyToken<T>,
     options?: ProvideOptions<NoInfer<T>>,
   ): ValueOverride<T>
 
-  /** Closes every scope and cleans up every value owned by this runtime. */
+  /**
+   * Closes the installation and every scope, and cleans up every value the
+   * runtime still owns.
+   *
+   * The runtime cannot be used afterward.
+   */
   dispose(): Promise<void>
 }
 
@@ -507,7 +527,7 @@ class InstallationImpl implements Installation {
 /**
  * Creates an independent dependency graph.
  *
- * Define its dependencies through the methods on the returned runtime.
+ * Define its dependencies through the methods of the returned runtime.
  */
 export function createRuntime(options: RuntimeOptions = {}): Runtime {
   return new RuntimeImpl(options)
@@ -516,17 +536,17 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
 const globalRuntime = new RuntimeImpl({ name: "global" })
 
 /**
- * Defines a dependency with no built-in value.
+ * Defines a dependency whose value is provided at an application, request,
+ * or task boundary.
  *
- * Supply it through an installation or scope before reading it.
- * A configured disposer applies only to values Ripple DI owns.
+ * Provide it with `install` or `withOverrides` before calling it.
  */
 export function defineDependency<T>(options?: DependencyOptions<T>): Dependency<T>
 /**
- * Defines a dependency with a lazy built-in factory.
+ * Defines a dependency whose value a factory builds on first use.
  *
- * The result is cached. A scope gets a separate result when it overrides a
- * dependency that the factory called.
+ * The value is cached, and a scope that overrides a dependency the factory
+ * called gets a value of its own.
  */
 export function defineDependency<T>(
   factory: () => FactoryResult<T>,
@@ -544,19 +564,20 @@ export function defineDependency<T>(
 }
 
 /**
- * Defines an overrideable factory invoked with ordinary runtime arguments.
+ * Defines a replaceable function that application code calls with runtime
+ * arguments.
  *
- * Each call resolves the current factory and invokes it without caching or
- * owning the result.
+ * Each call invokes the function selected for the current scope, whose
+ * results are neither cached nor cleaned up.
  */
 export function defineFactoryDependency<TFactory extends AnyFactory>(
   factory: TFactory,
   options?: FactoryDependencyOptions,
 ): FactoryDependency<TFactory>
 /**
- * Defines an overrideable factory with no built-in implementation.
+ * Defines a replaceable function with no built-in implementation.
  *
- * Supply it through an installation or scope before calling it.
+ * Provide it with `install` or `withOverrides` before calling it.
  */
 export function defineFactoryDependency<TFactory extends AnyFactory>(
   options?: FactoryDependencyOptions,
@@ -573,30 +594,37 @@ export function defineFactoryDependency<TFactory extends AnyFactory>(
 }
 
 /**
- * Installs long-lived providers for module-level dependencies.
+ * Supplies the application's values for the whole runtime.
  *
- * Scoped overrides still take priority. Close the returned installation to
- * remove its providers and clean up everything created from them.
+ * Installed values apply wherever no scope overrides them.
+ * Install once during startup, before creating any scope, and close the
+ * returned installation before installing a replacement.
  */
 export function install(...provisions: ProvisionCollectionInput[]): Installation {
   return globalRuntime.install(...provisions)
 }
 
-/** Returns a dependency value from the current scope. */
+/** Returns the value of a dependency in the current scope. */
 export function resolve<T>(dependency: DependencyToken<T>): T {
   return globalRuntime.resolve(dependency)
 }
 
-/** Creates a manually managed scope with optional dependency overrides. */
+/**
+ * Creates a scope with the given overrides beneath the current one.
+ *
+ * Close it when the work that shares it ends.
+ */
 export function createScope(provisions: ProvisionInput = []): Scope {
   return globalRuntime.createScope(provisions)
 }
 
 /**
- * Runs a callback with temporary dependency overrides.
+ * Runs a callback with temporary overrides.
  *
- * Overrides remain active across `await`, stay isolated from concurrent
- * callbacks, and are cleaned up when the callback finishes.
+ * The overrides stay active across `await` and isolated from concurrent
+ * callbacks.
+ * The callback's result is awaited, and then the values created for the
+ * callback are cleaned up.
  */
 export function withOverrides<TCallbackResult>(
   provisions: ProvisionInput,
@@ -606,11 +634,13 @@ export function withOverrides<TCallbackResult>(
 }
 
 /**
- * Continues the current dependency context outside its original scope.
+ * Runs a callback that keeps the current overrides after the current scope
+ * closes.
  *
- * Current override layers are reproduced beneath the active installation or
- * runtime root without copying cached values, and are cleaned up after the
- * callback finishes.
+ * The overrides are applied again in new scopes, which are cleaned up after
+ * the callback finishes.
+ * Values handed over with `dispose` cannot be carried over.
+ * Open an async generator with `createDetachedStream` instead.
  */
 export function runDetached<TCallbackResult>(
   callback: (scope: Scope) => TCallbackResult,
@@ -619,27 +649,17 @@ export function runDetached<TCallbackResult>(
 }
 
 /**
- * Opens an async source that keeps the current dependency context for every
- * read.
+ * Opens an async source that keeps the current overrides for every read,
+ * even after the current scope closes.
  *
- * The source is opened immediately inside reproduced override layers, each
- * read runs inside them, and they are cleaned up when the source finishes or
- * the reader closes the stream.
- * External cancellation starts closing even an unread stream.
- *
- * Pass the signal from `open` to operations that need to stop promptly.
- * Cancellation waits for operations without signal support to finish;
- * an uninterruptible wait can keep cleanup pending indefinitely.
- * External cancellation and `return()` abort that signal immediately, stop
- * new reads, and keep the scopes open until source cleanup finishes.
- * The signal also aborts when the source finishes or fails, but remains
- * active after a `throw()` that the source recovers from.
- * After external cancellation, await `return()` or `Symbol.asyncDispose`
- * to observe cleanup failures; new reads return `done` immediately.
- * A source error from a read or `return()` becomes `done` only when the
- * signal is aborted and the error equals `signal.reason` or has name `AbortError`.
- * All other source errors and every dependency cleanup error remain observable.
- * Successful values from reads already in progress are preserved.
+ * `open` runs immediately, and its scopes close when the source finishes, a
+ * read fails, the reader leaves, or `options.signal` aborts.
+ * Pass the signal given to `open` to the operations inside the source so that
+ * they stop promptly when the stream closes.
+ * After that signal aborts, an error that is its `reason` or is named
+ * `AbortError` ends the stream normally.
+ * After external cancellation, await `return()` or `Symbol.asyncDispose` to
+ * wait for cleanup and see its errors.
  */
 export function createDetachedStream<T>(
   open: (scope: Scope, signal: AbortSignal) => AsyncIterable<T>,
@@ -649,21 +669,21 @@ export function createDetachedStream<T>(
 }
 
 /**
- * Prepares dependency overrides that are applied again to each call of the
- * returned runner.
+ * Creates a runner that applies the same overrides to each call in a scope
+ * of its own.
  *
- * The factory runs again for every call, so a call can own the values it
- * provides.
+ * `factory` runs again for every call, so each call can hand over values of
+ * its own.
  */
 export function createOverrideRunner(factory: ProvisionFactory): OverrideRunner {
   return globalRuntime.createOverrideRunner(factory)
 }
 
 /**
- * Prepares a helper that replaces one dependency with a value for one callback.
+ * Creates a helper that provides a value for one dependency during a
+ * callback.
  *
- * Use it for a dependency that application code supplies the same way in many
- * places, such as a client or a request context.
+ * Use it for a replacement repeated in several places.
  * Ownership options given here apply to every value the helper receives.
  */
 export function createValueOverride<T>(
@@ -673,7 +693,13 @@ export function createValueOverride<T>(
   return globalRuntime.createValueOverride(dependency, options)
 }
 
-/** Closes every scope and cleans up every owned value. */
+/**
+ * Shuts the built-in runtime down when the application stops.
+ *
+ * Closes the installation and every scope, and cleans up every value the
+ * runtime still owns.
+ * The runtime cannot be used afterward, so do not call it between tests.
+ */
 export function dispose(): Promise<void> {
   return globalRuntime.dispose()
 }

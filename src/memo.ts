@@ -20,8 +20,10 @@ type ZeroArgumentMethod<TMethod extends (...args: never[]) => unknown> =
   Parameters<TMethod> extends [] ? TMethod : never
 
 /**
- * Memoizes a zero-argument synchronous computation by its receiver and the
- * Ripple dependencies it reads.
+ * Caches the result of a synchronous zero-argument computation for each receiver.
+ *
+ * The result is computed again when the function is called in a scope that
+ * overrides a dependency the computation read.
  */
 export function memoize<TResult>(computation: (this: void) => TResult): () => TResult
 export function memoize<TObject extends object, TResult>(
@@ -112,7 +114,12 @@ function createMemoized<TReceiver extends object | undefined, TResult>(
   }
 }
 
-/** Standard decorator for a dependency-aware getter or zero-argument method. */
+/**
+ * Caches a getter or zero-argument method on its object.
+ *
+ * The value is computed again when it is read in a scope that overrides a
+ * dependency the member read.
+ */
 export function memo<TObject extends object, TResult>(
   value: (this: TObject) => TResult,
   context: ClassGetterDecoratorContext<TObject, TResult>,

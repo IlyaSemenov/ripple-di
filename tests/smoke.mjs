@@ -1,4 +1,4 @@
-// Checks the built package on every runtime the README claims support for.
+// Checks the built package on every runtime that docs/getting-started.md claims support for.
 // Run it after `bun run build` with node, deno, or bun.
 import assert from "node:assert/strict"
 import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
@@ -175,7 +175,7 @@ async function checkAwaitableValue() {
   assert.deepEqual(await queryBuilder, ["rows"])
 }
 
-// The README example for several independent runtimes.
+// The documented example for several independent runtimes.
 async function checkMultipleRuntimes() {
   function createApplication(databaseUrl) {
     const runtime = createRuntime()

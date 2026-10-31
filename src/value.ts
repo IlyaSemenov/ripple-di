@@ -1,7 +1,7 @@
 declare const asValueBrand: unique symbol
 
 /**
- * A factory result marked as the dependency value itself.
+ * A factory result marked as the dependency's value.
  *
  * Create it with `asValue`.
  */
@@ -9,7 +9,7 @@ export interface AsValue<T> {
   readonly [asValueBrand]: (value: T) => T
 }
 
-/** What a dependency factory may return: the value, or a marked value. */
+/** What a dependency factory returns: the value, or a value marked with `asValue`. */
 export type FactoryResult<T> = T | AsValue<T>
 
 /** Boxed payload, so that `undefined` and `null` stay markable. */
@@ -20,13 +20,12 @@ interface MarkedValue {
 const markedValues = new WeakMap<object, MarkedValue>()
 
 /**
- * Uses a factory result as the dependency value even when it is a `Promise`.
+ * Marks a promise returned by a factory as the dependency's value.
  *
- * A factory that returns a promise is normally rejected, because dependency
- * reads made after an `await` are not tracked.
- * Wrap the result when the promise itself is the value the dependency holds.
- * A value that merely implements `then`, such as a query builder, is an
- * ordinary value and does not need this.
+ * A factory that returns a promise is otherwise rejected, because the
+ * dependencies it calls after an `await` are not recorded.
+ * A value that only implements `then`, such as a query builder, needs no
+ * marking.
  */
 export function asValue<T>(value: T): AsValue<T> {
   const marked = {} as AsValue<T>

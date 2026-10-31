@@ -7,46 +7,45 @@ declare const dependencyBrand: unique symbol
 /** Internal callable constraint that preserves a factory's concrete signature. */
 export type AnyFactory = (...args: never[]) => unknown
 
-/** Opaque identity accepted by provision and explicit resolution APIs. */
+/** A dependency accepted by `provide` and `resolve`. */
 export interface DependencyToken<T> {
   readonly [dependencyBrand]: (value: T) => T
 }
 
 /**
- * A function that returns the dependency value for the current scope.
+ * A function that returns the dependency's value in the current scope.
  *
- * Pass the same function to `provide` to replace its value or to
- * `scope.resolve` when you need to read from a specific scope.
+ * Pass it to `provide` to replace its value, or to `scope.resolve` to read it
+ * from a specific scope.
  */
 export type Dependency<T> = (() => T) & DependencyToken<T>
 
 /**
- * An overrideable factory selected from the current scope and invoked with
- * ordinary runtime arguments.
+ * A replaceable function, selected for the current scope and called with
+ * runtime arguments.
  */
 export type FactoryDependency<TFactory extends AnyFactory> = TFactory & DependencyToken<TFactory>
 
-/** Optional diagnostics for a factory dependency. */
+/** Options for `defineFactoryDependency`. */
 export interface FactoryDependencyOptions {
-  /** Optional name used only in error messages and resolution paths. */
+  /** Name shown in error messages. */
   readonly name?: string
 }
 
-/** Cleans up a value when Ripple DI no longer needs it. */
+/** Cleans up a value that Ripple DI owns. */
 export type Disposer<T> = (value: T) => void | Promise<void>
 
-/** Optional diagnostics and cleanup for a dependency. */
+/** Options for `defineDependency`. */
 export interface DependencyOptions<T> {
-  /** Optional name used only in error messages and resolution paths. */
+  /** Name shown in error messages. */
   readonly name?: string
   /**
-   * Cleans up values owned by Ripple DI.
+   * Cleans up the values that Ripple DI creates for this dependency or
+   * receives with `provide(..., { dispose: true })`.
    *
-   * Pass `true` to use `Symbol.asyncDispose`, falling back to
-   * `Symbol.dispose`, or pass a callback explicitly.
-   * This applies to the built-in factory, `provideFactory`, and values passed
-   * through `provide` with `dispose: true`.
-   * Plain values passed through `provide` remain borrowed.
+   * Pass `true` to call the value's `Symbol.asyncDispose` method, or
+   * `Symbol.dispose` when it has no async one.
+   * Values passed to `provide` without `dispose` are never cleaned up.
    */
   readonly dispose?: Disposer<T> | true
 }

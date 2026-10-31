@@ -8,28 +8,32 @@ import { type FactoryResult, markedValueOf } from "./value"
 declare const provisionBrand: unique symbol
 
 /**
- * A value, factory, or provider removal prepared for a scope or installation.
+ * A value, factory, or removal of a dependency for `install`, `withOverrides`,
+ * and other functions that accept overrides.
  *
- * Create provisions with `provide`, `provideFactory`, or `withoutProvider`.
+ * Create it with `provide`, `provideFactory`, or `withoutProvider`.
  */
 export interface Provision {
   readonly [provisionBrand]: true
 }
 
-/** One provision or a list accepted by scopes, installations, and overrides. */
+/** One provision or a list of them. */
 export type ProvisionInput = Provision | readonly Provision[]
 
-/** One provision input or an absent conditional branch being collected. */
+/**
+ * Provisions accepted by `install` and `collectProvisions`, which skip
+ * `false`, `null`, and `undefined`.
+ */
 export type ProvisionCollectionInput = ProvisionInput | false | null | undefined
 
-/** Ownership options for an existing value supplied with `provide`. */
+/** Options for `provide`. */
 export interface ProvideOptions<T> {
   /**
-   * Cleanup called when the receiving scope or installation closes.
+   * Hands the value over to the receiving scope or installation, which cleans
+   * it up when it closes.
    *
-   * Pass `true` to reuse the dependency's cleanup configuration, or pass a
-   * different callback explicitly.
-   * Either form transfers ownership of the value to Ripple DI.
+   * Pass `true` to use the dependency's own `dispose`, or a callback to clean
+   * up this value differently.
    */
   readonly dispose?: Disposer<T> | true
 }
@@ -69,10 +73,10 @@ export function provisionListOf(input: ProvisionInput): readonly Provision[] {
 }
 
 /**
- * Collects individual provisions and provision lists into one flat list.
+ * Combines provisions and lists of them into one list.
  *
- * False and nullish inputs are omitted so provisions can be included
- * conditionally without temporary arrays.
+ * `false`, `null`, and `undefined` are skipped, so provisions can be included
+ * conditionally.
  */
 export function collectProvisions(
   ...inputs: readonly ProvisionCollectionInput[]
@@ -114,14 +118,13 @@ export function claimOwnedProvisions<TPrepared>(
 }
 
 /**
- * Uses an existing value for a dependency in a scope or installation.
+ * Provides an existing value for a dependency.
  *
- * Ripple DI cleans up the value only when `options.dispose` is provided.
- * Pass `true` to reuse cleanup configured by `defineDependency`, or pass a
- * callback to override it.
- * A function passed as the value remains a value rather than becoming a factory.
- * A provision that transfers ownership can be used in only one scope or
- * installation.
+ * The value stays yours unless `options.dispose` hands it over to the
+ * receiving scope or installation; a handed-over value belongs to that owner
+ * only.
+ * A function passed as the value is the value itself; use `provideFactory` to
+ * build the value instead.
  */
 export function provide<T>(
   dependency: DependencyToken<T>,
@@ -154,14 +157,13 @@ export function provide<T>(
 }
 
 /**
- * Creates a dependency override on demand in the receiving scope or
- * installation.
+ * Provides a factory that builds the dependency's value on first use in the
+ * receiving scope or installation.
  *
- * The factory must be synchronous.
- * Calls to other dependencies inside it are tracked automatically.
- * The receiving scope or installation owns the created value.
- * When the dependency has configured cleanup, it cleans up the override when
- * its owner closes.
+ * The factory is synchronous, and the dependencies it calls are recorded like
+ * those of a built-in factory.
+ * The receiving scope or installation cleans up the value with the
+ * dependency's `dispose`.
  */
 export function provideFactory<T>(
   dependency: DependencyToken<T>,
@@ -171,11 +173,12 @@ export function provideFactory<T>(
 }
 
 /**
- * Makes a dependency unavailable in the receiving scope or installation.
+ * Makes a dependency unavailable in the receiving scope or installation, even
+ * when an outer scope or the dependency's own factory would supply it.
  *
- * Reads throw MissingProviderError even when a parent supplies a value or the
- * dependency has a built-in factory. A child scope can provide it again.
- * This provision is reusable and does not dispose existing values.
+ * Calling the dependency there throws `MissingProviderError`, and a nested
+ * scope can provide it again.
+ * Existing values are not cleaned up.
  */
 export function withoutProvider<T>(dependency: DependencyToken<T>): Provision {
   return createProvision(dependency, { kind: "missing" })

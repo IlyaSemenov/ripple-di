@@ -29,27 +29,30 @@ import { resolveTracked } from "./resolution"
 export type ScopeState = "active" | "retiring" | "closing" | "closed"
 
 /**
- * An isolated view of dependency values that inherits from a parent scope.
+ * A set of overrides applied on top of the parent scope, together with the
+ * values created for them.
  *
- * A scope can replace selected dependencies without changing its parent.
- * Scope management and lifecycle methods cannot be called from a dependency
- * factory or disposer in the same runtime.
+ * Create one with `createScope`, and close it when the work that shares it
+ * ends.
  */
 export interface Scope extends AsyncDisposable {
-  /** Returns a dependency value explicitly from this scope. */
+  /** Returns a dependency's value in this scope rather than the current one. */
   resolve<T>(dependency: DependencyToken<T>): T
-  /** Creates a child scope with optional dependency overrides. */
+  /** Creates a child scope with the given overrides. */
   createScope(provisions?: ProvisionInput): Scope
-  /** Makes this scope current while the callback runs without closing it. */
+  /** Runs a callback with this scope as the current one and leaves the scope open. */
   run<TCallbackResult>(callback: () => TCallbackResult): TCallbackResult
-  /** Runs a callback in a temporary child scope and cleans it up afterward. */
+  /**
+   * Runs a callback in a temporary child scope with the given overrides and
+   * cleans it up afterward.
+   */
   withOverrides<TCallbackResult>(
     provisions: ProvisionInput,
     callback: (scope: Scope) => TCallbackResult,
   ): Promise<Awaited<TCallbackResult>>
-  /** Waits for existing child scopes before cleaning up this scope. */
+  /** Waits for the child scopes to close, then closes this scope. */
   retire(): Promise<void>
-  /** Closes all child scopes and then cleans up this scope. */
+  /** Closes the child scopes and this scope, and cleans up the values they own. */
   close(): Promise<void>
 }
 
