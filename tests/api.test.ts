@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, expectTypeOf, it } from "bun:test"
+import { describe, expect, expectTypeOf, it } from "bun:test"
 
 import {
   asValue,
@@ -13,7 +13,6 @@ import {
   type Dependency,
   type DetachedStream,
   type DetachedStreamOptions,
-  dispose,
   type FactoryDependency,
   install,
   type Installation,
@@ -52,8 +51,6 @@ interface Closeable {
 }
 
 type Handler = () => string
-
-afterAll(() => dispose())
 
 describe("consumer site", () => {
   async function consumer() {
