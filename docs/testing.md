@@ -61,6 +61,41 @@ test(
 )
 ```
 
+## Check that an expensive value is shared
+
+A value is built again in every scope that overrides a dependency its factory called, including calls made by library code that the factory runs, such as a callback.
+To make sure an expensive value, such as a database client, is not built again for each request, read it in two scopes with different overrides and compare the results:
+
+```ts
+import { provide, withOverrides } from "ripple-di"
+
+test("requests share one database client", async () => {
+  const [left, right] = await Promise.all([
+    withOverrides(provide(useTenant, leftTenant), () => useDb()),
+    withOverrides(provide(useTenant, rightTenant), () => useDb()),
+  ])
+  expect(right).toBe(left)
+})
+```
+
+When the values differ, call `inspectDependency` with the same overrides to find the dependency that causes it:
+
+```ts
+import { inspectDependency } from "ripple-di"
+
+await withOverrides(provide(useTenant, leftTenant), () => {
+  for (const input of inspectDependency(useDb).inputs) {
+    console.log(input.path.join(" → "))
+  }
+})
+// db → query-builder
+// db → tenant
+// db → query-builder → config
+```
+
+It lists every dependency that the value was built from, directly or through other dependencies, with the [names](./errors#name-dependencies-in-messages) of the dependencies that lead to it.
+A scope that overrides any of them gets a value of its own.
+
 ## Repeat a suite in one process
 
 Some test runners repeat suite hooks in one process without evaluating the preload again, such as Bun with `--rerun-each`.

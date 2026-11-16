@@ -46,6 +46,7 @@ Do not catalog files or restate information evident from their names and locatio
 - `evaluation.ts` owns module-local synchronous tracking for dependency factories and memo computations, plus factory cycle paths.
 - `memo.ts` owns dependency-aware memo storage, the zero-argument primitive, and its decorator.
 - `resolution.ts` implements provider lookup, tracking, validation, promotion, and cycle detection.
+- `inspection.ts` defines the public `DependencyInspection` contract and lists the recorded inputs of a resolved value.
 - `runtime.ts` defines the `Runtime` and `Installation` contracts and owns runtime creation, dependency definitions, callable routing, root installation, and the module-level API.
 - `scope.ts` defines the `Scope` contract and owns provision validation and binding, async context, and lifecycle boundaries.
 - `detached.ts` defines the `DetachedStream` contract and owns layer snapshots, their reproduction, and detached callbacks and streams.
@@ -145,6 +146,8 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - Name the type parameter of a callback-based API `TCallbackResult` and infer it from the callback's own return type, whether or not the API awaits it.
   Declare an awaited result as `Promise<Awaited<TCallbackResult>>` instead of declaring the callback as returning `TCallbackResult | Promise<TCallbackResult>`, and do not export an alias for that form.
 - Do not add live mutation, signal effects, async resolution, previous-binding decorators, or cross-scope factory reads to the core API.
+- `inspectDependency` resolves the dependency like `resolve`, including tracking by a calling factory, and then lists its inputs only from the reads recorded when each value was built, without resolving anything else.
+  Keep it read-only: do not add an `untracked()` escape hatch or another way to hide a recorded read.
 - Memo computations are synchronous, cache only successful reads, track only Ripple dependencies, and never own their results.
   Keep one latest cell per object and member, store dependency identities without retaining their scopes, and reject arguments and recursion.
   Reject scope management before a memo binds to a runtime and in its bound runtime afterward.
@@ -186,6 +189,7 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - `tests/api.test.ts` covers consumer syntax and public type inference.
 - `tests/runtime.test.ts` covers runtime APIs, installation semantics, isolation, and cross-runtime boundaries.
 - `tests/resolution.test.ts` covers tracking, promotion, and resolution errors.
+- `tests/inspection.test.ts` covers the inputs that `inspectDependency` lists.
 - `tests/scope-lifecycle.test.ts` covers scope creation, async context, ownership, disposal, retirement, close, and leaked scopes.
 - `tests/overrides.test.ts` covers override runners, their layers, value overrides, and per-call isolation.
 - `tests/model-based.test.ts` compares generated graphs with a deterministic reference resolver.

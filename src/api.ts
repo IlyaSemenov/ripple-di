@@ -8,6 +8,7 @@ export type {
 } from "./dependency"
 export type { DetachedStream, DetachedStreamOptions } from "./detached"
 export * from "./errors"
+export type { DependencyInput, DependencyInspection } from "./inspection"
 export { memo, memoize } from "./memo"
 export type { OverrideRunner, ProvisionFactory, ValueOverride } from "./overrides"
 export type { ProvideOptions, Provision, ProvisionCollectionInput, ProvisionInput } from "./provide"
@@ -22,6 +23,7 @@ export {
   defineDependency,
   defineFactoryDependency,
   dispose,
+  inspectDependency,
   install,
   resolve,
   runDetached,

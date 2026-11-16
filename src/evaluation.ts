@@ -2,7 +2,7 @@ import { FactoryScopeOperationError, MemoScopeOperationError } from "./errors"
 import type {
   BindingStamp,
   DependencyNode,
-  DependencyStamp,
+  ResolutionRef,
   RuntimeContext,
   ScopeContext,
 } from "./graph"
@@ -12,7 +12,7 @@ interface TrackingState {
   readonly name: string
   runtime: RuntimeContext | undefined
   scope: ScopeContext | undefined
-  readonly dependencies: Map<DependencyNode<unknown>, DependencyStamp>
+  readonly dependencies: Map<DependencyNode<unknown>, ResolutionRef<unknown>>
   hasFailedDependencyRead: boolean
 }
 

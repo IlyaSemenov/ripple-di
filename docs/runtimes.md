@@ -35,6 +35,7 @@ A runtime has the same methods as the module-level API:
 - `defineFactoryDependency`
 - `install`
 - `resolve`
+- `inspectDependency`
 - `createScope`
 - `withOverrides`
 - `runDetached`

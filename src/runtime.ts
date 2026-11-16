@@ -27,6 +27,7 @@ import {
 } from "./errors"
 import { assertOutsideTracking, currentEvaluation, currentTracking } from "./evaluation"
 import type { BoundProvider, DependencyNode, RuntimeContext, ScopeContext } from "./graph"
+import { type DependencyInspection, inspectTracked } from "./inspection"
 import {
   createOverrideRunnerFor,
   createValueOverrideFor,
@@ -123,6 +124,14 @@ export interface Runtime extends AsyncDisposable {
 
   /** Returns the value of a dependency in the current scope. */
   resolve<T>(dependency: DependencyToken<T>): T
+
+  /**
+   * Lists the dependencies that the value of a dependency in the current scope
+   * was built from.
+   *
+   * Reads the value first, as `resolve` does, so it is built if needed.
+   */
+  inspectDependency<T>(dependency: DependencyToken<T>): DependencyInspection
 
   /**
    * Creates a scope with the given overrides beneath the current one.
@@ -334,6 +343,12 @@ class RuntimeImpl implements RuntimeContext {
     const node = nodeOf(dependency)
     this.assertOwnDependency(node)
     return resolveTracked(this.currentScope(node.name), node)
+  }
+
+  inspectDependency<T>(dependency: DependencyToken<T>): DependencyInspection {
+    const node = nodeOf(dependency)
+    this.assertOwnDependency(node)
+    return inspectTracked(this.currentScope(node.name), node)
   }
 
   createScope(provisions: ProvisionInput = []): Scope {
@@ -607,6 +622,16 @@ export function install(...provisions: ProvisionCollectionInput[]): Installation
 /** Returns the value of a dependency in the current scope. */
 export function resolve<T>(dependency: DependencyToken<T>): T {
   return globalRuntime.resolve(dependency)
+}
+
+/**
+ * Lists the dependencies that the value of a dependency in the current scope
+ * was built from.
+ *
+ * Reads the value first, as `resolve` does, so it is built if needed.
+ */
+export function inspectDependency<T>(dependency: DependencyToken<T>): DependencyInspection {
+  return globalRuntime.inspectDependency(dependency)
 }
 
 /**

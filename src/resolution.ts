@@ -27,7 +27,6 @@ import type {
   Cell,
   DependencyIdentityRecord,
   DependencyNode,
-  DependencyStamp,
   ResolutionRef,
   ScopeContext,
 } from "./graph"
@@ -44,6 +43,14 @@ class ResolutionInvariantError extends RippleError {
 
 /** Public and callable reads are tracked against the frame that initiated them. */
 export function resolveTracked<T>(scope: ScopeContext, node: DependencyNode<T>): T {
+  return resolveTrackedRef(scope, node).value
+}
+
+/** Counterpart of `resolveTracked` that returns the value with its binding or cell identity. */
+export function resolveTrackedRef<T>(
+  scope: ScopeContext,
+  node: DependencyNode<T>,
+): ResolutionRef<T> {
   const consumerFrame = currentTracking()
 
   try {
@@ -68,9 +75,9 @@ export function resolveTracked<T>(scope: ScopeContext, node: DependencyNode<T>):
 
     const resolved = resolveUntracked(scope, node)
     if (consumerFrame) {
-      recordDependency(consumerFrame, node, resolved.stamp)
+      recordDependency(consumerFrame, node, resolved)
     }
-    return resolved.value
+    return resolved
   } catch (error) {
     // Failed reads have no stamp to compare later, so a consumer that catches
     // this failure cannot safely reuse its result in another context.
@@ -172,7 +179,7 @@ function isReusable<T>(
     try {
       const dependencyNode = nodeOf(record.dependency)
       const actual = resolveUntracked(requestedScope, dependencyNode)
-      if (actual.stamp.identity !== record.stamp.identity) {
+      if (actual.stamp.identity !== record.resolved.stamp.identity) {
         return false
       }
     } catch {
@@ -229,9 +236,9 @@ function materialize<T>(
     popEvaluation(frame)
   }
 
-  const dependencies = [...frame.dependencies].map(([dependencyNode, stamp]) => ({
+  const dependencies = [...frame.dependencies].map(([dependencyNode, resolved]) => ({
     dependency: dependencyNode.dependency,
-    stamp,
+    resolved,
   }))
 
   // A reusable value belongs to the deepest scope among its provider and
@@ -240,7 +247,7 @@ function materialize<T>(
   const reusable = !frame.hasFailedDependencyRead
   const owner = !reusable
     ? requestedScope
-    : deepestScope([provider.stamp.home, ...dependencies.map(record => record.stamp.home)])
+    : deepestScope([provider.stamp.home, ...dependencies.map(record => record.resolved.stamp.home)])
 
   if (!isAncestorOrSelf(owner, requestedScope)) {
     throw new Error(`ripple-di owner invariant failed for dependency "${node.name}".`)
@@ -275,16 +282,16 @@ function materialize<T>(
 function recordDependency<T>(
   frame: TrackingFrame,
   node: DependencyNode<T>,
-  stamp: DependencyStamp<T>,
+  resolved: ResolutionRef<T>,
 ): void {
   const unknownNode = asUnknownNode(node)
   const previous = frame.dependencies.get(unknownNode)
-  if (previous && previous.identity !== stamp.identity) {
+  if (previous && previous.stamp.identity !== resolved.stamp.identity) {
     throw new ResolutionInvariantError(
       `Dependency "${node.name}" changed identity while evaluating ` + `"${frame.name}".`,
     )
   }
-  frame.dependencies.set(unknownNode, stamp as DependencyStamp)
+  frame.dependencies.set(unknownNode, resolved as ResolutionRef<unknown>)
 }
 
 /** Reuses and propagates a previously tracked dependency set when it matches. */
@@ -305,7 +312,7 @@ export function reuseTrackedDependencies(
 
   const resolvedDependencies: Array<{
     node: DependencyNode<unknown>
-    stamp: DependencyStamp
+    resolved: ResolutionRef<unknown>
   }> = []
   try {
     for (const record of dependencies) {
@@ -316,7 +323,7 @@ export function reuseTrackedDependencies(
       if (actual.stamp.identity !== record.identity) {
         return false
       }
-      resolvedDependencies.push({ node, stamp: actual.stamp })
+      resolvedDependencies.push({ node, resolved: actual })
     }
   } catch {
     return false
@@ -326,7 +333,7 @@ export function reuseTrackedDependencies(
     consumerFrame.runtime = scope.runtime
     consumerFrame.scope = scope
     for (const dependency of resolvedDependencies) {
-      recordDependency(consumerFrame, dependency.node, dependency.stamp)
+      recordDependency(consumerFrame, dependency.node, dependency.resolved)
     }
   }
   return true
@@ -367,8 +374,8 @@ export function propagateTrackedDependencies(
 
   consumer.runtime = source.runtime
   consumer.scope = source.scope
-  for (const [node, stamp] of source.dependencies) {
-    recordDependency(consumer, node, stamp)
+  for (const [node, resolved] of source.dependencies) {
+    recordDependency(consumer, node, resolved)
   }
 }
 

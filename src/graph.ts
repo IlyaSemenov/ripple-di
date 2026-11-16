@@ -88,10 +88,15 @@ export interface ResolutionRef<T> {
   readonly stamp: DependencyStamp<T>
 }
 
-/** One effective dependency identity retained by a factory cell. */
+/**
+ * One effective dependency read retained by a factory cell.
+ *
+ * Holding the resolution itself, rather than only its stamp, lets inspection
+ * follow a dependency cell to its own inputs without resolving anything.
+ */
 export interface DependencyRecord {
   readonly dependency: DependencyToken<unknown>
-  readonly stamp: DependencyStamp
+  readonly resolved: ResolutionRef<unknown>
 }
 
 /** Tracked identity retained without keeping its originating scope alive. */

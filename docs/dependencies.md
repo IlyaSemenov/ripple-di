@@ -17,7 +17,8 @@ const usePublicUrl = defineDependency(() => createPublicUrl(useConfig()))
 The factory runs on the first call, and later calls return the cached value.
 Ripple DI records which dependencies the factory calls, so a scope that overrides `useConfig` gets its own `usePublicUrl`, while scopes that do not override it share one.
 
-Only dependency calls made while the factory runs are recorded.
+Only dependency calls made while the factory runs are recorded, including those made by library code that the factory calls.
+To check which dependencies a value was built from, see [Testing](./testing#check-that-an-expensive-value-is-shared).
 Reads of `process.env`, `Date.now()`, and other state outside Ripple DI never cause a rebuild, so put such inputs behind a dependency, like `useClock` above, when tests need to replace them.
 
 Call a dependency where its value is used, not at module level:

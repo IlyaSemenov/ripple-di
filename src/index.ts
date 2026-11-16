@@ -27,6 +27,7 @@ export const {
   FactoryError,
   FactoryScopeOperationError,
   InstallationConflictError,
+  inspectDependency,
   install,
   LeakedChildScopeError,
   MemoCycleError,

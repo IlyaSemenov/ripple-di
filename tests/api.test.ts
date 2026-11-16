@@ -11,9 +11,11 @@ import {
   defineDependency,
   defineFactoryDependency,
   type Dependency,
+  type DependencyInspection,
   type DetachedStream,
   type DetachedStreamOptions,
   type FactoryDependency,
+  inspectDependency,
   install,
   type Installation,
   memo,
@@ -266,6 +268,8 @@ describe("module-level API", () => {
   it("exports global counterparts for runtime methods", async () => {
     expect(resolve(useDb)).toBe(useDb())
     expect(resolve(useDatabaseLabel)).toBe("db:production")
+    const inspection: DependencyInspection = inspectDependency(useDb)
+    expect(inspection.inputs.map(input => input.dependency)).toEqual([useConfig])
 
     const scope = createScope([provide(useConfig, { url: "manual" })])
     expect(scope.run(() => useDb().url)).toBe("manual")

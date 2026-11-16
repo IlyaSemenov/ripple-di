@@ -100,9 +100,9 @@ function createMemoized<TReceiver extends object | undefined, TResult>(
       return value
     }
 
-    const dependencies = [...frame.dependencies].map(([node, stamp]) => ({
+    const dependencies = [...frame.dependencies].map(([node, resolved]) => ({
       dependency: node.dependency,
-      identity: stamp.identity,
+      identity: resolved.stamp.identity,
     }))
     const cell = { value, dependencies }
     if (receiver) {

@@ -19,6 +19,7 @@ import {
   defineDependency,
   defineFactoryDependency,
   dispose,
+  inspectDependency,
   install,
   MissingProviderError,
   provide,
@@ -46,6 +47,10 @@ const useDb = defineDependency(
 
 function checkAmbientRead() {
   assert.equal(useDb().url, "production")
+  assert.deepEqual(
+    inspectDependency(useDb).inputs.map(input => input.dependency),
+    [useConfig],
+  )
 }
 
 async function checkDefinitionSites() {
