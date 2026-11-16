@@ -1,8 +1,4 @@
-name: Test and Release
-
-env:
-  # Keep in sync with .changeset/config.json:baseBranch
-  MAIN_REF: refs/heads/main
+name: Test
 
 on:
   push:
@@ -11,16 +7,16 @@ on:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
-# Publish to npm with OIDC
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 jobs:
   # Every runtime that docs/getting-started.md claims support for runs the built package.
   smoke:
     name: Smoke test
+    # A release commit only versions a commit whose CI the release has waited for.
+    # A skipped job satisfies required status checks, unlike a skipped workflow.
+    if: ${{ !startsWith(github.event.head_commit.message, 'Release ') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -66,8 +62,8 @@ jobs:
       - name: Smoke test on Deno
         run: deno run --allow-env --allow-read --allow-write tests/smoke.mjs
 
-  test-and-release:
-    name: Test and Release
+  test:
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: smoke
@@ -81,7 +77,7 @@ jobs:
         with:
           version: 2026.11.9
 
-      # for npx publish
+      # The package-copy tests run scenarios in Node.
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -104,18 +100,3 @@ jobs:
 
       - name: Build docs
         run: bun run docs:build
-
-      - name: Capture release title
-        if: ${{ github.ref == env.MAIN_REF }}
-        run: |
-          npx @changesets/cli status --output=release.json
-          echo "RELEASE=Release $(jq -r '.releases | sort_by(.name) | map(.name + "@" + .newVersion) | join(", ")' release.json)" >> "$GITHUB_ENV"
-          rm release.json
-
-      - name: Create Release Pull Request or Publish to npm
-        if: ${{ github.ref == env.MAIN_REF }}
-        uses: changesets/action@v2.1.2
-        with:
-          publish-script: npx changeset publish
-          pr-title: ${{ env.RELEASE }}
-          commit-message: ${{ env.RELEASE }}
