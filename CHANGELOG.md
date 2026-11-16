@@ -1,5 +1,11 @@
 # ripple-di
 
+## 3.3.0
+
+### Minor Changes
+
+- 9e82c91: Add `inspectDependency`, which lists the dependencies that a value was built from, so tests can find why a value is built again in each scope.
+
 ## 3.2.0
 
 ### Minor Changes
