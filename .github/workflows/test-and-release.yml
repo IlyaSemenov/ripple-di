@@ -22,6 +22,7 @@ jobs:
   smoke:
     name: Smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -68,6 +69,7 @@ jobs:
   test-and-release:
     name: Test and Release
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: smoke
 
     steps:
