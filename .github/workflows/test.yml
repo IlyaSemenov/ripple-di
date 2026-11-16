@@ -77,12 +77,6 @@ jobs:
         with:
           version: 2026.11.9
 
-      # The package-copy tests run scenarios in Node.
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 26
-
       - name: Install deps
         run: bun install --frozen-lockfile
 
