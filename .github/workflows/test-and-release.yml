@@ -24,12 +24,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup mise
         uses: jdx/mise-action@v5
         with:
-          version: 2026.10.25
+          version: 2026.11.9
 
       - name: Install deps
         run: bun install --frozen-lockfile
@@ -41,7 +41,7 @@ jobs:
         run: bun tests/smoke.mjs
 
       - name: Setup oldest supported Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 18.18.0
 
@@ -49,7 +49,7 @@ jobs:
         run: node tests/smoke.mjs
 
       - name: Setup current Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -71,18 +71,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup mise
         uses: jdx/mise-action@v5
         with:
-          version: 2026.10.25
+          version: 2026.11.9
 
       # for npx publish
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
 
       - name: Install deps
         run: bun install --frozen-lockfile
