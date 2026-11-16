@@ -9,15 +9,9 @@ export type {
 export type { DetachedStream, DetachedStreamOptions } from "./detached"
 export * from "./errors"
 export type { DependencyInput, DependencyInspection } from "./inspection"
-export { memo, memoize } from "./memo"
-export type { OverrideRunner, ProvisionFactory, ValueOverride } from "./overrides"
-export type { ProvideOptions, Provision, ProvisionCollectionInput, ProvisionInput } from "./provide"
-export { collectProvisions, provide, provideFactory, withoutProvider } from "./provide"
-export type { Installation, Runtime, RuntimeOptions } from "./runtime"
 export {
   createDetachedStream,
   createOverrideRunner,
-  createRuntime,
   createScope,
   createValueOverride,
   defineDependency,
@@ -28,7 +22,13 @@ export {
   resolve,
   runDetached,
   withOverrides,
-} from "./runtime"
+} from "./global"
+export { memo, memoize } from "./memo"
+export type { OverrideRunner, ProvisionFactory, ValueOverride } from "./overrides"
+export type { ProvideOptions, Provision, ProvisionCollectionInput, ProvisionInput } from "./provide"
+export { collectProvisions, provide, provideFactory, withoutProvider } from "./provide"
+export type { Installation, Runtime, RuntimeOptions } from "./runtime"
+export { createRuntime } from "./runtime"
 export type { Scope, ScopeState } from "./scope"
 export type { AsValue, FactoryResult } from "./value"
 export { asValue } from "./value"

@@ -47,7 +47,8 @@ Do not catalog files or restate information evident from their names and locatio
 - `memo.ts` owns dependency-aware memo storage, the zero-argument primitive, and its decorator.
 - `resolution.ts` implements provider lookup, tracking, validation, promotion, and cycle detection.
 - `inspection.ts` defines the public `DependencyInspection` contract and lists the recorded inputs of a resolved value.
-- `runtime.ts` defines the `Runtime` and `Installation` contracts and owns runtime creation, dependency definitions, callable routing, root installation, and the module-level API.
+- `runtime.ts` defines the `Runtime` and `Installation` contracts and owns runtime creation, dependency definitions, callable routing, and root installation.
+- `global.ts` owns the built-in global runtime and the module-level API that delegates to it.
 - `scope.ts` defines the `Scope` contract and owns provision validation and binding, async context, and lifecycle boundaries.
 - `detached.ts` defines the `DetachedStream` contract and owns layer snapshots, their reproduction, and detached callbacks and streams.
 - `overrides.ts` defines the `OverrideRunner` and `ValueOverride` contracts and owns reusable override layers and helpers.
