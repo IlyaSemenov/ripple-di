@@ -151,9 +151,9 @@ Factory-created values are reused whenever their provider and recorded dependenc
 
 ## Design
 
-- With every change, look for refactorings that reduce complexity: duplicated logic, a concept spread over several modules, or code that an upcoming feature will need elsewhere.
-  Make those that belong to the change, and propose the others in the final report.
-- Give a domain rule or contract its own function or module at its first use, such as how provisions are normalized or which values a disposer option accepts, so that the next use finds it.
+- With every change, look for refactorings that reduce the complexity of the code it touches, such as duplicated logic or a concept spread over several modules.
+  Make those that ease the change, and propose the others in the final report, listed apart from its fixes.
+- Give a domain rule or contract a function of its own at its first use, such as how provisions are normalized or which values a disposer option accepts, so that the next use finds it; give it a module of its own only when several modules use it.
   Do not extract code that only looks alike.
 - Before adding a helper, search for an existing one that does the same.
 
@@ -172,11 +172,10 @@ Factory-created values are reused whenever their provider and recorded dependenc
 - Update nearby JSDoc and inline comments whenever the documented code changes, and remove comments that no longer apply.
 - Do not narrate self-evident syntax or restate what a name already communicates.
 - Keep terms such as CellStamp, BindingStamp, provider home, and evaluation frame out of public explanations.
-- Do not document obvious or implied defaults.
 - Describe a default only when readers need it to make a decision or avoid surprising behavior.
-- Use One Sentence Per Line for connected prose.
-- Keep semantically connected explanations as prose paragraphs.
-- Use lists for separate assertions instead of presenting them as prose paragraphs.
+- Use One Sentence Per Line for connected prose, including JSDoc and code comments: do not wrap a sentence across lines.
+- Keep semantically connected explanations as prose paragraphs, and use lists for separate assertions.
+- Link a file of another repository by a tag or a commit, such as of the version you checked, never by a branch such as `main`, whose file changes.
 
 ## Changesets
 
