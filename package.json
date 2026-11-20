@@ -63,7 +63,7 @@
     "@ilyasemenov/oxc-config": "^0.1.3",
     "@tsconfig/bun": "^1.0.12",
     "@types/bun": "^1.4.4",
-    "changesets-release": "^2.1.0",
+    "changesets-release": "^2.1.1",
     "oxfmt": "^0.79.0",
     "oxlint": "^1.94.0",
     "publint": "^0.3.25",
